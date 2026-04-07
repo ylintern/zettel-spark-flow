@@ -1,0 +1,45 @@
+[package]
+name = "app"
+version = "0.1.0"
+description = "VIBO AI - Zettelkasten"
+authors = ["cristianovb"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.83" # 🚀 Aqui está a atualização do Rust para a IA funcionar!
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.0-rc.13" }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.0.0-rc.17" }
+
+# ── Plugins Oficiais ──
+tauri-plugin-log = "2.0.0-rc"
+tauri-plugin-sql = { version = "2.0.0-rc", features = ["sqlite"] } # 🚀 O SQLite está ativado!
+tauri-plugin-fs = "2"
+tauri-plugin-stronghold = "2.0.0-rc"
+tauri-plugin-dialog = "2.0.0-rc"
+tauri-plugin-os = "2"
+tauri-plugin-clipboard-manager = "2.0.0-beta.0"
+
+# ── IA, RAG e Semântica ──
+tauri-plugin-velesdb = "1.12.0"
+tauri-plugin-leap-ai = "0.1.1"
+swiftide = "0.32.1"
+swiftide-agents = "0.32.1"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2.0.0-rc"
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-haptics = "2.0.0-rc"
+

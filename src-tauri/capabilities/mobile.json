@@ -1,0 +1,11 @@
+{
+  "identifier": "mobile-capability",
+  "platforms": [
+    "android",
+    "iOS"
+  ],
+  "permissions": [
+    "haptics:default",
+    "clipboard-manager:default"
+  ]
+}
