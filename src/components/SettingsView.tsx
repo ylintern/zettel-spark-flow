@@ -1,21 +1,25 @@
 import { useStore } from "@/lib/store";
-import { Moon, Sun, Trash2, Download, Shield, Fingerprint } from "lucide-react";
+import { Moon, Sun, Trash2, Download, Shield } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState, useEffect } from "react";
 import { isPinSetup } from "@/lib/crypto";
 import { LocalModelsSection } from "@/components/settings/LocalModelsSection";
 import { CloudProvidersSection } from "@/components/settings/CloudProvidersSection";
+import { BiometricsSection } from "@/components/settings/BiometricsSection";
+import { SafeVaultResetSection } from "@/components/settings/SafeVaultResetSection";
 import { getActiveProvider, setActiveProvider } from "@/lib/models";
 
 const TOR_TOGGLE_KEY = "zettel-tor-enabled";
-const BIOMETRICS_KEY = "vibo-biometrics-enabled";
 
 export function SettingsView() {
   const { notes } = useStore();
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
   const [torEnabled, setTorEnabled] = useState(() => localStorage.getItem(TOR_TOGGLE_KEY) === "true");
-  const [biometricsEnabled, setBiometricsEnabled] = useState(() => localStorage.getItem(BIOMETRICS_KEY) !== "false");
-  const hasPin = isPinSetup();
+  const [hasPin, setHasPin] = useState(false);
+
+  useEffect(() => {
+    void isPinSetup().then(setHasPin).catch(() => setHasPin(false));
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -24,10 +28,6 @@ export function SettingsView() {
   useEffect(() => {
     localStorage.setItem(TOR_TOGGLE_KEY, String(torEnabled));
   }, [torEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem(BIOMETRICS_KEY, String(biometricsEnabled));
-  }, [biometricsEnabled]);
 
   const exportNotes = () => {
     const blob = new Blob([JSON.stringify(notes, null, 2)], { type: "application/json" });
@@ -48,12 +48,7 @@ export function SettingsView() {
   };
 
   const resetEncryption = () => {
-    if (confirm("Reset encryption? This will delete all encrypted notes and your PIN. This cannot be undone.")) {
-      localStorage.removeItem("zettel-encrypted-notes");
-      localStorage.removeItem("zettel-pin-hash");
-      localStorage.removeItem("zettel-crypto-salt");
-      window.location.reload();
-    }
+    alert("Secure vault reset is not implemented yet. We will add a safe backend reset flow later.");
   };
 
   return (
@@ -96,23 +91,6 @@ export function SettingsView() {
               </div>
             </div>
 
-            {/* Biometrics toggle */}
-            <button
-              onClick={() => setBiometricsEnabled(!biometricsEnabled)}
-              className="w-full flex items-center justify-between py-2 text-sm text-foreground"
-            >
-              <span className="flex items-center gap-2">
-                <Fingerprint className="h-4 w-4" />
-                <div className="text-left">
-                  <div className="text-xs font-medium">Biometrics</div>
-                  <div className="text-[9px] text-muted-foreground">Use Face ID / Fingerprint to unlock</div>
-                </div>
-              </span>
-              <div className={`w-9 h-5 rounded-full transition-colors ${biometricsEnabled ? "bg-primary/60" : "bg-muted"} relative`}>
-                <div className={`absolute top-0.5 h-4 w-4 rounded-full transition-transform ${biometricsEnabled ? "bg-primary left-[18px]" : "bg-foreground left-0.5"}`} />
-              </div>
-            </button>
-
             {hasPin && (
               <button
                 onClick={resetEncryption}
@@ -124,6 +102,9 @@ export function SettingsView() {
             )}
           </div>
         </div>
+
+        {/* Biometrics (Mobile only) */}
+        <BiometricsSection />
 
         {/* Local Models */}
         <LocalModelsSection />
@@ -148,6 +129,9 @@ export function SettingsView() {
             </button>
           </div>
         </div>
+
+        {/* Safe Vault Reset */}
+        <SafeVaultResetSection />
 
         {/* Stats */}
         <div className="card-3d rounded-2xl p-4">

@@ -7,6 +7,7 @@ import {
   getActiveProvider,
   setActiveProvider,
   getCloudKeys,
+  loadCloudKeys,
   getSelectedModels,
   setSelectedModel,
   type ActiveProvider,
@@ -32,6 +33,14 @@ function ModelSwitcher() {
   const [active, setActive] = useState<ActiveProvider>(getActiveProvider);
   const [selModels, setSelModels] = useState(getSelectedModels);
   const keys = getCloudKeys();
+
+  useEffect(() => {
+    void loadCloudKeys().then(() => {
+      setSelModels(getSelectedModels());
+    }).catch((error) => {
+      console.error("Failed to load secure cloud keys:", error);
+    });
+  }, []);
 
   const availableProviders = CLOUD_PROVIDERS.filter((p) => keys[p.id]);
   const currentProvider = active === "local" ? null : CLOUD_PROVIDERS.find((p) => p.id === active);
@@ -145,7 +154,13 @@ export function ChatAssistant({ compact = false, sessionId = "default" }: { comp
   useEffect(() => { sessionMessages.set(sessionId, messages); }, [messages, sessionId]);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, isTyping]);
   useEffect(() => {
-    const iv = setInterval(() => { setLfmActive(isLfmConfigured()); setProviderLabel(getActiveProviderLabel()); }, 2000);
+    const refresh = async () => {
+      await loadCloudKeys().catch(() => undefined);
+      setLfmActive(isLfmConfigured());
+      setProviderLabel(getActiveProviderLabel());
+    };
+    void refresh();
+    const iv = setInterval(() => { void refresh(); }, 2000);
     return () => clearInterval(iv);
   }, []);
 

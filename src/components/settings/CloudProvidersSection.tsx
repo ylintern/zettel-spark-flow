@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Cloud, Key, Server, Globe, Check, X, ChevronDown, Unplug } from "lucide-react";
 import {
   CLOUD_PROVIDERS,
   getCloudKeys,
+  loadCloudKeys,
   setCloudKey,
   getActiveProvider,
   setActiveProvider,
@@ -178,18 +179,23 @@ export function CloudProvidersSection({
   const [activeProvider, setActive] = useState(getActiveProvider);
   const [selectedModels, setModels] = useState(getSelectedModels);
 
-  const handleConnect = (provider: CloudProviderType, key: string) => {
-    setCloudKey(provider, key);
+  useEffect(() => {
+    void loadCloudKeys().then(setKeys).catch((error) => {
+      console.error("Failed to load secure cloud keys:", error);
+    });
+  }, []);
+
+  const handleConnect = async (provider: CloudProviderType, key: string) => {
+    await setCloudKey(provider, key);
     setKeys(getCloudKeys());
-    // Auto-activate first connected provider
     if (activeProvider === "local") {
       setActiveProvider(provider);
       setActive(provider);
     }
   };
 
-  const handleDisconnect = (provider: CloudProviderType) => {
-    setCloudKey(provider, "");
+  const handleDisconnect = async (provider: CloudProviderType) => {
+    await setCloudKey(provider, "");
     setKeys(getCloudKeys());
     if (activeProvider === provider) {
       setActiveProvider("local");
@@ -225,8 +231,8 @@ export function CloudProvidersSection({
             connected={!!keys[provider.id]}
             active={activeProvider === provider.id}
             selectedModel={selectedModels[provider.id] || ""}
-            onConnect={(key) => handleConnect(provider.id, key)}
-            onDisconnect={() => handleDisconnect(provider.id)}
+            onConnect={(key) => { void handleConnect(provider.id, key); }}
+            onDisconnect={() => { void handleDisconnect(provider.id); }}
             onActivate={() => activate(provider.id)}
             onModelSelect={(m) => handleModelSelect(provider.id, m)}
           />

@@ -9,7 +9,7 @@ import { Trash2, Eye, Edit2, X, Plus, Lock, Unlock, FolderOpen } from "lucide-re
 import type { Note } from "@/lib/types";
 
 export function NoteEditor({ noteId, onClose }: { noteId: string; onClose?: () => void }) {
-  const { notes, folders, updateNote, deleteNote, selectNote, toggleNoteEncryption, moveNoteToFolder } = useStore();
+  const { notes, folders, updateNote, deleteNote, selectNote, toggleNoteEncryption, moveNoteToFolder, getNoteSaveState } = useStore();
   const note = notes.find((n) => n.id === noteId);
   const [preview, setPreview] = useState(false);
   const [tagInput, setTagInput] = useState("");
@@ -22,6 +22,7 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose?: () =
 
   const backlinks = getBacklinks(note.title, notes);
   const wikiLinks = extractWikiLinks(note.content);
+  const saveState = getNoteSaveState(noteId);
 
   const handleContentChange = (value: string) => {
     updateNote(noteId, { content: value });
@@ -106,6 +107,15 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose?: () =
           className="text-lg font-bold border-none shadow-none focus-visible:ring-0 px-0 bg-transparent flex-1"
           placeholder="Note title..."
         />
+        <div className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+          saveState === "error"
+            ? "bg-destructive/10 text-destructive"
+            : saveState === "saving"
+            ? "bg-muted text-muted-foreground"
+            : "bg-primary/10 text-primary"
+        }`}>
+          {saveState === "error" ? "Save error" : saveState === "saving" ? "Saving..." : "Saved"}
+        </div>
         <Button
           variant="ghost"
           size="icon"

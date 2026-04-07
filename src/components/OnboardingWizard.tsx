@@ -582,7 +582,7 @@ export function OnboardingWizard({ onComplete }: OnboardingProps) {
     // Persist cloud keys
     for (const id of enabledProviders) {
       if (providerKeys[id]) {
-        setCloudKey(id as CloudProviderType, providerKeys[id]);
+        void setCloudKey(id as CloudProviderType, providerKeys[id]);
       }
     }
     // Persist tor preference

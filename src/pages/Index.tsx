@@ -12,7 +12,8 @@ import { LockScreen } from "@/components/LockScreen";
 import { OnboardingWizard, isOnboardingDone } from "@/components/OnboardingWizard";
 import type { OnboardingConfig } from "@/components/OnboardingWizard";
 import { StoreProvider, useStore } from "@/lib/store";
-import { getEncryptedNotes, decryptData, isPinSetup } from "@/lib/crypto";
+import { isPinSetup } from "@/lib/crypto";
+import { isTauriRuntimeAvailable, onVaultStatusChanged } from "@/lib/commands";
 import { Plus, MessageCircle, X, SquarePlus } from "lucide-react";
 import logo from "@/assets/logo.svg";
 import type { Note } from "@/lib/types";
@@ -182,9 +183,34 @@ const Index = () => {
   const [initialNotes, setInitialNotes] = useState<Note[]>([]);
 
   useEffect(() => {
-    if (isOnboardingDone()) {
-      setPhase("lock");
+    if (!isOnboardingDone()) return;
+    void isPinSetup()
+      .then(() => setPhase("lock"))
+      .catch(() => setPhase("lock"));
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntimeAvailable()) {
+      const handleVaultLocked = () => setPhase("lock");
+      window.addEventListener("vibo:vault-locked", handleVaultLocked);
+      return () => window.removeEventListener("vibo:vault-locked", handleVaultLocked);
     }
+
+    let dispose = () => {};
+
+    void onVaultStatusChanged((payload) => {
+      if (payload.configured && !payload.unlocked) {
+        setPhase("lock");
+      }
+    }).then((unlisten) => {
+      dispose = () => {
+        void unlisten();
+      };
+    });
+
+    return () => {
+      dispose();
+    };
   }, []);
 
   const handleOnboardingComplete = (_config: OnboardingConfig) => {
@@ -193,23 +219,13 @@ const Index = () => {
 
   const handleUnlock = async (enteredPin: string) => {
     setPin(enteredPin);
-    const encrypted = getEncryptedNotes();
-    if (encrypted) {
-      try {
-        const decrypted = await decryptData(encrypted, enteredPin);
-        setInitialNotes(JSON.parse(decrypted));
-      } catch {
-        setInitialNotes([]);
-      }
-    } else {
-      try {
-        const raw = localStorage.getItem("zettel-notes");
-        const notes = raw ? JSON.parse(raw) : [];
-        setInitialNotes(notes);
-        localStorage.removeItem("zettel-notes");
-      } catch {
-        setInitialNotes([]);
-      }
+    try {
+      const raw = localStorage.getItem("zettel-notes");
+      const notes = raw ? JSON.parse(raw) : [];
+      setInitialNotes(notes);
+      localStorage.removeItem("zettel-notes");
+    } catch {
+      setInitialNotes([]);
     }
     setPhase("app");
   };

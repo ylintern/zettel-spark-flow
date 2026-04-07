@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Lock, ShieldCheck, Eye, EyeOff } from "lucide-react";
 import { isPinSetup, verifyPin, setupPin } from "@/lib/crypto";
 
@@ -7,12 +7,16 @@ interface LockScreenProps {
 }
 
 export function LockScreen({ onUnlock }: LockScreenProps) {
-  const isSetup = isPinSetup();
+  const [isSetup, setIsSetup] = useState(false);
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [step, setStep] = useState<"enter" | "confirm">(isSetup ? "enter" : "enter");
   const [error, setError] = useState("");
   const [showPin, setShowPin] = useState(false);
+
+  useEffect(() => {
+    void isPinSetup().then(setIsSetup).catch(() => setIsSetup(false));
+  }, []);
 
   const handleSubmit = async () => {
     setError("");
@@ -112,8 +116,8 @@ export function LockScreen({ onUnlock }: LockScreenProps) {
 
         <p className="text-[10px] text-muted-foreground text-center max-w-[200px]">
           {isSetup
-            ? "Your notes are encrypted with AES-256-GCM"
-            : "Your PIN derives an AES-256 key to encrypt all notes locally"}
+            ? "Your secure vault protects private notes and secrets"
+            : "Your PIN unlocks the secure vault for private notes and secrets"}
         </p>
       </div>
     </div>

@@ -49,17 +49,13 @@ export function NewNoteDialog({ open, onOpenChange }: Props) {
   };
 
   const createWithTemplate = (templateId: string, isKanban: boolean, isEncrypted: boolean) => {
-    const note = addNote("inbox", isKanban);
     const content = TEMPLATE_CONTENT[templateId] || SECRET_TEMPLATE_CONTENT[templateId] || (isKanban ? TEMPLATE_CONTENT.blank : "");
-    // Use store updateNote through a quick import workaround — we set content via the note
-    // The addNote returns the note, we can update it immediately
-    if (content) {
-      // We need to use the store's updateNote
-      // Since addNote already selected the note, we just need to navigate
-    }
-    if (isEncrypted) {
-      toggleNoteEncryption(note.id);
-    }
+    const template = [...NOTE_TEMPLATES, ...KANBAN_TEMPLATES, ...SECRET_TEMPLATES].find((item) => item.id === templateId);
+    addNote("inbox", isKanban, {
+      title: template?.label || (isKanban ? "Untitled Task" : "Untitled"),
+      content,
+      isEncrypted,
+    });
     setActiveView(isKanban ? "kanban" : "notebook");
     setCreationType(null);
     onOpenChange(false);

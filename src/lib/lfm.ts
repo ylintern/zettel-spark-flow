@@ -8,6 +8,7 @@ import {
   getActiveLocalModel,
   getLfmEndpoint,
   getCloudKeys,
+  loadCloudKeys,
   CLOUD_PROVIDERS,
   getDownloadedModels,
   type ActiveProvider,
@@ -98,6 +99,7 @@ export async function streamLfmChat({
   signal?: AbortSignal;
 }) {
   const provider = getActiveProvider();
+  await loadCloudKeys().catch(() => undefined);
 
   if (provider === "local" && !getLfmEndpoint()) {
     onError("LEAP server not configured. Go to Settings → Local Models to set the endpoint.");

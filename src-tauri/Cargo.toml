@@ -16,10 +16,19 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.0.0-rc.13" }
 
 [dependencies]
+anyhow = "1"
+aes-gcm = "0.10"
+base64 = "0.22"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+getrandom = "0.3"
+iota_stronghold = "2.1"
 log = "0.4"
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
 tauri = { version = "2.0.0-rc.17" }
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v4"] }
 
 # ── Plugins Oficiais ──
 tauri-plugin-log = "2.0.0-rc"
@@ -42,4 +51,3 @@ tauri-plugin-global-shortcut = "2.0.0-rc"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-haptics = "2.0.0-rc"
-

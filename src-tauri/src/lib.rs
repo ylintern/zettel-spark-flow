@@ -1,3 +1,20 @@
+mod commands;
+mod db;
+mod events;
+mod models;
+mod security;
+mod state;
+mod vault;
+
+use std::fs;
+
+use tauri::Manager;
+
+use crate::{
+    security::{biometric::BiometricState, SecurityState},
+    state::AppState,
+};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 1. Iniciamos o motor
@@ -8,7 +25,10 @@ pub fn run() {
     {
         builder = builder
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-            .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![])));
+            .plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                Some(vec![]),
+            ));
     }
 
     // 3. Plugins exclusivos de Telemóvel (iOS/Android)
@@ -27,6 +47,26 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|app| {
+            let app_data_dir = app
+                .path()
+                .app_local_data_dir()
+                .expect("failed to resolve app local data dir");
+            let vault_dir = app_data_dir.join("vault");
+            let db_path = app_data_dir.join("vibo.db");
+            let secure_vault_path = app_data_dir.join("secure-vault.hold");
+
+            fs::create_dir_all(&vault_dir).expect("failed to create vault dir");
+            let db = tauri::async_runtime::block_on(db::init_pool(&db_path))
+                .expect("failed to initialize app database");
+
+            app.manage(AppState::new(
+                db,
+                db_path,
+                vault_dir,
+                SecurityState::new(secure_vault_path),
+                BiometricState::new(),
+            ));
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -37,6 +77,28 @@ pub fn run() {
             // A nossa lógica futura vai arrancar aqui!
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            commands::workspace::load_workspace_snapshot,
+            commands::workspace::save_note,
+            commands::workspace::delete_note,
+            commands::workspace::create_folder,
+            security::setup_secure_vault,
+            security::unlock_vault,
+            security::lock_vault,
+            security::is_vault_unlocked,
+            security::is_vault_configured,
+            security::store_secret,
+            security::get_secret,
+            security::delete_secret,
+            security::factory_reset,
+            security::reset_vault_and_secrets,
+            security::biometric::is_biometric_available,
+            security::biometric::is_biometric_enabled,
+            security::biometric::enable_biometric_unlock,
+            security::biometric::disable_biometric_unlock,
+            security::biometric::verify_biometric_and_unlock,
+            security::biometric::fallback_passphrase_unlock,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

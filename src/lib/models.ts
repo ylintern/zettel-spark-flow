@@ -1,3 +1,9 @@
+import {
+  deleteSecretFromVault,
+  getSecretFromVault,
+  storeSecretInVault,
+} from "./commands";
+
 /**
  * Model Registry & Provider Configuration
  * Local LFM models + Cloud providers for deep reasoning
@@ -151,11 +157,19 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
 const STORAGE_KEYS = {
   activeLocalModel: "vibo-active-local-model",
   downloadedModels: "vibo-downloaded-models",
-  cloudKeys: "vibo-cloud-keys",
   activeProvider: "vibo-active-provider",
   lfmEndpoint: "vibo-lfm-endpoint",
   selectedModels: "vibo-selected-models", // per-provider model selection
 } as const;
+
+let cloudKeysCache: Record<CloudProviderType, string> = {
+  ollama: "",
+  openrouter: "",
+  anthropic: "",
+  gemini: "",
+  kimi: "",
+  minimax: "",
+};
 
 export function getActiveLocalModel(): string {
   return localStorage.getItem(STORAGE_KEYS.activeLocalModel) || "lfm2.5-1.2b-instruct";
@@ -181,15 +195,37 @@ export function removeDownloadedModel(id: string) {
   localStorage.setItem(STORAGE_KEYS.downloadedModels, JSON.stringify(models));
 }
 
-export function getCloudKeys(): Record<CloudProviderType, string> {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.cloudKeys) || "{}") as any;
-  } catch { return {} as any; }
+function cloudSecretKey(provider: CloudProviderType): string {
+  return `cloud:${provider}`;
 }
-export function setCloudKey(provider: CloudProviderType, value: string) {
-  const keys = getCloudKeys();
-  keys[provider] = value;
-  localStorage.setItem(STORAGE_KEYS.cloudKeys, JSON.stringify(keys));
+
+export function getCloudKeys(): Record<CloudProviderType, string> {
+  return { ...cloudKeysCache };
+}
+
+export async function loadCloudKeys(): Promise<Record<CloudProviderType, string>> {
+  const next = { ...cloudKeysCache };
+  for (const provider of CLOUD_PROVIDERS.map((item) => item.id)) {
+    try {
+      next[provider] = (await getSecretFromVault(cloudSecretKey(provider))) || "";
+    } catch {
+      next[provider] = "";
+    }
+  }
+  cloudKeysCache = next;
+  return getCloudKeys();
+}
+
+export async function setCloudKey(provider: CloudProviderType, value: string) {
+  const normalized = value.trim();
+  if (normalized) {
+    await storeSecretInVault(cloudSecretKey(provider), normalized);
+    cloudKeysCache[provider] = normalized;
+    return;
+  }
+
+  await deleteSecretFromVault(cloudSecretKey(provider));
+  cloudKeysCache[provider] = "";
 }
 
 export type ActiveProvider = "local" | CloudProviderType;
