@@ -8,7 +8,9 @@ use aes_gcm::{
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use iota_stronghold::Client;
+use log;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, State};
 use tauri_plugin_stronghold::stronghold::Stronghold;
 use thiserror::Error;
@@ -23,6 +25,18 @@ use crate::{
 const CLIENT_NAME: &[u8] = b"vibo-app";
 const NOTE_KEY_SECRET: &str = "note_encryption_key";
 const PRIVATE_NOTE_PREFIX: &str = "!vibo-encrypted:v1:";
+
+/// Derive a 32-byte vault encryption key from a user passphrase.
+/// This is the canonical derivation for all Stronghold operations.
+/// Uses SHA-256 to ensure exactly 32 bytes output.
+pub fn derive_vault_key(passphrase: &str) -> Vec<u8> {
+    log::info!("derive_vault_key: deriving 32-byte key from passphrase");
+    let mut hasher = Sha256::new();
+    hasher.update(passphrase.as_bytes());
+    let key = hasher.finalize().to_vec();
+    log::info!("derive_vault_key: key derivation complete, output length: {} bytes", key.len());
+    key
+}
 
 pub struct SecurityState {
     snapshot_path: PathBuf,
@@ -46,29 +60,66 @@ impl SecurityState {
     }
 
     pub fn setup(&self, passphrase: &str) -> Result<(), SecurityError> {
-        let stronghold = Stronghold::new(&self.snapshot_path, passphrase.as_bytes().to_vec())
-            .map_err(|err| SecurityError::Stronghold(err.to_string()))?;
+        // Ensure parent directory exists before creating the stronghold snapshot
+        if let Some(parent) = self.snapshot_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|err| SecurityError::Stronghold(format!("Failed to create vault dir: {}", err)))?;
+        }
 
+        log::info!("setup: vault path resolved to: {:?}", self.snapshot_path);
+        
+        log::info!("setup: deriving canonical vault key");
+        let vault_key = derive_vault_key(passphrase);
+        
+        log::info!("setup: calling Stronghold::new");
+        let stronghold = Stronghold::new(&self.snapshot_path, vault_key)
+            .map_err(|err| {
+                let msg = format!("Stronghold::new failed: {}", err);
+                log::error!("{}", msg);
+                SecurityError::Stronghold(msg)
+            })?;
+
+        log::info!("setup: Stronghold::new succeeded, ensuring client");
         let client = ensure_client(&stronghold)?;
+        
+        log::info!("setup: client created, ensuring note key");
         ensure_note_key(&stronghold, &client)?;
+        
+        log::info!("setup: calling stronghold.save()");
         stronghold
             .save()
-            .map_err(|err| SecurityError::Stronghold(err.to_string()))?;
+            .map_err(|err| {
+                let msg = format!("setup: Failed to save stronghold: {}", err);
+                log::error!("{}", msg);
+                SecurityError::Stronghold(msg)
+            })?;
 
+        log::info!("setup: vault setup complete, snapshot persisted");
         *self.session.lock().unwrap() = Some(stronghold);
         Ok(())
     }
 
     pub fn unlock(&self, passphrase: &str) -> Result<(), SecurityError> {
         if !self.is_configured() {
+            log::warn!("Vault not configured at: {:?}", self.snapshot_path);
             return Err(SecurityError::VaultNotConfigured);
         }
 
-        let stronghold = Stronghold::new(&self.snapshot_path, passphrase.as_bytes().to_vec())
-            .map_err(|_| SecurityError::InvalidPassphrase)?;
+        log::info!("unlock: vault path resolved to: {:?}", self.snapshot_path);
+        
+        log::info!("unlock: deriving canonical vault key");
+        let vault_key = derive_vault_key(passphrase);
+        
+        log::info!("unlock: calling Stronghold::new");
+        let stronghold = Stronghold::new(&self.snapshot_path, vault_key)
+            .map_err(|err| {
+                log::error!("Failed to unlock vault: {}", err);
+                SecurityError::InvalidPassphrase
+            })?;
         let client = ensure_client(&stronghold)?;
         ensure_note_key(&stronghold, &client)?;
 
+        log::info!("unlock: vault unlocked successfully");
         *self.session.lock().unwrap() = Some(stronghold);
         Ok(())
     }

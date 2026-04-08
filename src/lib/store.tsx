@@ -6,19 +6,12 @@ import {
   deleteWorkspaceNote,
   isTauriRuntimeAvailable,
   loadWorkspaceSnapshot,
+  onNoteIndexingProgress,
+  type NoteIndexingProgressEvent,
   saveWorkspaceNote,
+  saveWorkspaceColumn,
+  fallbackPassphraseUnlock,
 } from "./commands";
-
-const FOLDERS_KEY = "vibo-folders";
-
-function loadFolders(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(FOLDERS_KEY) || "[]");
-  } catch { return []; }
-}
-function saveFolders(folders: string[]) {
-  localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
-}
 
 interface StoreContextType {
   notes: Note[];
@@ -28,6 +21,7 @@ interface StoreContextType {
   activeView: ViewMode;
   selectedNoteId: string | null;
   isHydrating: boolean;
+  indexingStatus: NoteIndexingProgressEvent;
   setActiveView: (v: ViewMode) => void;
   selectNote: (id: string | null) => void;
   addNote: (column?: string, isKanban?: boolean, seed?: Partial<Note>) => Note;
@@ -44,16 +38,13 @@ interface StoreContextType {
 
 const StoreContext = createContext<StoreContextType | null>(null);
 
-const COLUMNS_KEY = "zettel-columns";
-
-function loadColumns(): KanbanColumn[] {
-  try {
-    const raw = localStorage.getItem(COLUMNS_KEY);
-    return raw ? JSON.parse(raw) : DEFAULT_COLUMNS;
-  } catch {
-    return DEFAULT_COLUMNS;
-  }
-}
+const DEFAULT_INDEXING_STATUS: NoteIndexingProgressEvent = {
+  noteId: null,
+  stage: "idle",
+  progress: 100,
+  processedNotes: 0,
+  totalNotes: 0,
+};
 
 interface StoreProviderProps {
   children: React.ReactNode;
@@ -66,11 +57,12 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
   const [agentNotes, setAgentNotes] = useState<Note[]>(() => {
     try { return JSON.parse(loadAgentNotes()); } catch { return []; }
   });
-  const [columns] = useState<KanbanColumn[]>(loadColumns);
-  const [folders, setFolders] = useState<string[]>(loadFolders);
+  const [columns, setColumns] = useState<KanbanColumn[]>([]);
+  const [folders, setFolders] = useState<string[]>([]);
   const [activeView, setActiveView] = useState<ViewMode>("dashboard");
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [isHydrating, setIsHydrating] = useState(false);
+  const [indexingStatus, setIndexingStatus] = useState<NoteIndexingProgressEvent>(DEFAULT_INDEXING_STATUS);
   const [noteSaveState, setNoteSaveState] = useState<Record<string, "idle" | "saving" | "saved" | "error">>({});
   const persistTimersRef = useRef<Map<string, number>>(new Map());
 
@@ -86,40 +78,85 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
       return;
     }
 
+    let dispose = () => {};
+
+    void onNoteIndexingProgress((payload) => {
+      console.debug("[vibo] note_indexing_progress", payload);
+      setIndexingStatus(payload);
+    }).then((unlisten) => {
+      dispose = () => {
+        void unlisten();
+      };
+    });
+
+    return () => {
+      dispose();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntimeAvailable()) {
+      return;
+    }
+
     let cancelled = false;
     setIsHydrating(true);
+    setIndexingStatus({
+      noteId: null,
+      stage: "starting",
+      progress: 0,
+      processedNotes: 0,
+      totalNotes: 0,
+    });
 
     const hydrate = async () => {
       try {
         const snapshot = await loadWorkspaceSnapshot();
         if (cancelled) return;
 
-        const privateNotes = initialNotes.filter((note) => note.isEncrypted);
-        const legacyWorkspaceNotes = initialNotes.filter((note) => !note.isEncrypted);
-
-        const backendIds = new Set(snapshot.notes.map((note) => note.id));
-        const missingLegacyNotes = legacyWorkspaceNotes.filter((note) => !backendIds.has(note.id));
-
-        for (const note of missingLegacyNotes) {
-          await saveWorkspaceNote(note);
-        }
-
-        const mergedNotes = mergeNotes(snapshot.notes, missingLegacyNotes, privateNotes);
-        const mergedFolders = Array.from(new Set([...snapshot.folders, ...folders])).sort((a, b) => a.localeCompare(b));
+        // All notes come from backend (Tauri hydration)
+        const mergedNotes = snapshot.notes.sort((a, b) => {
+          const left = Date.parse(b.updatedAt || b.createdAt || "");
+          const right = Date.parse(a.updatedAt || a.createdAt || "");
+          return left - right;
+        });
+        const mergedFolders = [...snapshot.folders].sort((a, b) => a.localeCompare(b));
 
         for (const folder of mergedFolders) {
           await createWorkspaceFolder(folder);
         }
 
+        // Handle columns: seed DEFAULT_COLUMNS on first launch if backend is empty
+        let columnsToUse = snapshot.columns;
+        if (snapshot.columns.length === 0) {
+          // First launch: seed with default columns
+          columnsToUse = DEFAULT_COLUMNS;
+          for (const column of DEFAULT_COLUMNS) {
+            await saveWorkspaceColumn(column);
+          }
+        }
+
         if (!cancelled) {
           setNotes(mergedNotes);
           setFolders(mergedFolders);
+          setColumns(columnsToUse);
         }
       } catch (error) {
         console.error("Failed to hydrate workspace from Tauri backend:", error);
       } finally {
         if (!cancelled) {
           setIsHydrating(false);
+          setIndexingStatus((prev) => {
+            if (prev.progress >= 100) {
+              return prev;
+            }
+
+            return {
+              ...prev,
+              stage: "complete",
+              progress: 100,
+            };
+          });
         }
       }
     };
@@ -134,10 +171,6 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
   useEffect(() => {
     saveAgentNotes(JSON.stringify(agentNotes));
   }, [agentNotes]);
-
-  useEffect(() => {
-    saveFolders(folders);
-  }, [folders]);
 
   const persistNote = useCallback((note: Note, debounceMs = 0) => {
     if (!isTauriRuntimeAvailable()) {
@@ -303,31 +336,33 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
   }, [persistNote]);
 
   const toggleNoteEncryption = useCallback((noteId: string) => {
-    let nextNote: Note | null = null;
-    setNotes((prev) =>
-      prev.map((n) => {
-        if (n.id !== noteId) return n;
-        nextNote = {
-          ...n,
-          isEncrypted: !n.isEncrypted,
-          updatedAt: new Date().toISOString(),
-        };
-        return nextNote;
+    if (!isTauriRuntimeAvailable()) return;
+
+    const current = notes.find((n) => n.id === noteId);
+    if (!current) return;
+
+    const nextNote: Note = {
+      ...current,
+      isEncrypted: !current.isEncrypted,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setNotes((prev) => prev.map((n) => n.id === noteId ? nextNote : n));
+    setNoteSaveState((prev) => ({ ...prev, [noteId]: "saving" }));
+
+    void saveWorkspaceNote(nextNote)
+      .then(() => {
+        setNoteSaveState((prev) => ({ ...prev, [noteId]: "saved" }));
       })
-    );
-
-    if (!nextNote || !isTauriRuntimeAvailable()) {
-      return;
-    }
-
-    const existingTimer = persistTimersRef.current.get(noteId);
-    if (existingTimer) {
-      window.clearTimeout(existingTimer);
-      persistTimersRef.current.delete(noteId);
-    }
-
-    persistNote(nextNote);
-  }, [persistNote]);
+      .catch((error) => {
+        console.error(`Failed to toggle encryption for note ${noteId}:`, error);
+        setNotes((prev) => prev.map((n) => n.id === noteId ? current : n));
+        setNoteSaveState((prev) => ({ ...prev, [noteId]: "error" }));
+        if (String(error).includes("Vault locked")) {
+          window.dispatchEvent(new CustomEvent("vibo:vault-locked"));
+        }
+      });
+  }, [notes, saveWorkspaceNote]);
 
   const getNoteSaveState = useCallback((noteId: string) => {
     if (noteSaveState[noteId]) {
@@ -346,6 +381,7 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
         activeView,
         selectedNoteId,
         isHydrating,
+        indexingStatus,
         setActiveView,
         selectNote,
         addNote,

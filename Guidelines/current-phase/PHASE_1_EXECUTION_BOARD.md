@@ -1,10 +1,10 @@
 # Phase 1 Execution Board
 
-## Status: `[~]` EVENT BUS STARTED
+## Status: `[~]` EVENT BUS STARTED + APP-CORE QA GATE ACTIVE
 
 **Prerequisite Reality**:
-- Phase 0 persistence/security is advanced
-- Phase 0 sign-off is not fully closed
+- Gate 0 runtime validation is treated as passed for sequencing
+- P1 criticals now form the immediate QA gate before deeper Phase 1 work
 - next work must connect frontend and backend cleanly before deeper agentic logic
 
 ## Objective
@@ -31,7 +31,7 @@
 - `[x]` add TS event bridge for subscribe/unsubscribe
 - `[~]` show at least one real UI consumer for each event class
   - `[x]` `vault_status_changed`
-  - `[ ]` `note_indexing_progress`
+  - `[x]` `note_indexing_progress`
   - `[ ]` `agent_thinking_delta`
 
 Why first:
@@ -76,7 +76,7 @@ Rule:
 ## Scrum + RICE
 | ID | Item | R | I | C | E | Score | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| P1-01 | Rust -> UI event bus | 10 | 10 | 9 | 4 | 225 | `[ ]` |
+| P1-01 | Rust -> UI event bus | 10 | 10 | 9 | 4 | 225 | `[~]` |
 | P1-02 | caller-aware command boundary | 9 | 9 | 8 | 4 | 162 | `[ ]` |
 | P1-03 | context bundle service | 10 | 9 | 8 | 5 | 144 | `[ ]` |
 | P1-04 | LEAP runtime bridge | 9 | 10 | 7 | 5 | 126 | `[ ]` |
@@ -87,9 +87,23 @@ Score formula:
 
 ## Audit Notes
 - event module now exists and `vault_status_changed` is wired through the UI root
-- `note_indexing_progress` and `agent_thinking_delta` are defined but not emitting real work yet
+- `note_indexing_progress` now emits real hydration progress and is consumed globally by the store/sidebar
+- `agent_thinking_delta` is still defined but not emitting real work yet
 - biometric path still needs re-audit, but it does not block event bus work
 - do not jump into full Swiftide agent flow yet
+- P1 criticals implemented:
+  - launch-time folder bootstrap for `vault/notes` and `vault/kanban`
+  - phase derivation from backend vault truth in one TS helper
+  - factory reset now routes to onboarding through state, not ad-hoc UI branching
+- packaged QA result so far:
+  - `[x]` folder bootstrap PASS
+  - `[ ]` reset routing
+  - `[ ]` normal unlock regression
+- app-core blockers before deeper Phase 1:
+  - duplicate reset UX entrypoints in settings
+  - simple note / kanban real-user persistence QA incomplete
+  - private-note encrypt/decrypt UX contract incomplete
+- next gate is app-core QA, not more feature coding
 
 ## Guardrails
 - no sidecars
@@ -99,9 +113,16 @@ Score formula:
 - no fake streaming through loops if event bus can own it
 
 ## Success Criteria
-- `[~]` backend can push at least vault status from Rust to UI
+- `[~]` backend can push vault status and note indexing progress from Rust to UI
 - `[ ]` chat/inference can push streaming state from Rust to UI
 - `[ ]` backend can identify whether a mutation came from user or agent
 - `[ ]` context bundle exists and is injected before inference
 - `[ ]` LEAP runtime is connected through backend, not browser-local hacks
 - `[ ]` docs and audits stay aligned with actual code
+- `[~]` app-core QA gate:
+  - `[x]` folder recreation
+  - `[ ]` factory reset -> onboarding
+  - `[ ]` normal unlock regression
+  - `[ ]` simple note persistence
+  - `[ ]` kanban persistence
+  - `[ ]` private-note UX/security contract

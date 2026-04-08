@@ -1,4 +1,15 @@
+pub mod manifest;
+pub mod manager;
+
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KanbanColumn {
+    pub id: String,
+    pub title: String,
+    pub order: i64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,4 +46,5 @@ impl WorkspaceNote {
 pub struct WorkspaceSnapshot {
     pub notes: Vec<WorkspaceNote>,
     pub folders: Vec<String>,
+    pub columns: Vec<KanbanColumn>,
 }

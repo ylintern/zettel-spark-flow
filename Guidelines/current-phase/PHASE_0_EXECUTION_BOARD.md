@@ -5,7 +5,7 @@
 **Audit Date**: 2026-04-07
 **Blocking Re-Audit**:
 - biometric security path
-- packaged Mac app cold start / reset proof
+- interactive packaged Mac app cold start / reset proof
 
 Phase 0 is advanced, but not cleanly sign-off ready yet. Persistence and secure storage are materially better, but some docs overstated completion and need correction.
 
@@ -26,6 +26,7 @@ Phase 0 is advanced, but not cleanly sign-off ready yet. Persistence and secure 
 | Passphrase | `[~]` | Stronghold-backed and compile-verified |
 | Biometrics mobile | `[!]` | hardening confirmed previous flow was placeholder; hardware-backed release still missing |
 | Safe Vault Reset | `[~]` | full reset command now clears Stronghold + SQLite + vault; still needs packaged runtime proof |
+| Production Bundle | `[~]` | `.app` bundle built with production identifier; interactive launch not yet verified in audit |
 | Persistence Tests | `[~]` | Rust cold-start test passes; packaged Mac app proof still pending |
 | Inference | `[s]` | still deferred until sign-off + integration primitives are ready |
 
@@ -35,12 +36,17 @@ Phase 0 is advanced, but not cleanly sign-off ready yet. Persistence and secure 
 - `[x]` cold-start persistence test added in Rust and passing
 - `[x]` factory reset now clears db files, Stronghold snapshot, and Markdown vault files
 - `[x]` security commands now bind to the actually managed app state
+- `[x]` device-aware auth capability contract exists between Rust and frontend
+- `[x]` production `.app` bundle generated with `com.vibo.zettel-spark-flow`
+- `[!]` full `bun tauri build` still fails at `.dmg` packaging, though `.app` succeeds
 - `[!]` biometric path is intentionally blocked from claiming secure unlock until hardware-backed release exists
 - `[!]` no secure enclave / keychain / keystore proof yet
 - `[!]` no final packaged Mac app runtime sign-off captured in repo
 
 ## Remaining Sign-Off Tail
 - `[ ]` verify cold start on packaged Mac app runtime
+- `[ ]` verify packaged `.app` launches interactively on macOS
+- `[ ]` diagnose or explicitly defer `.dmg` packaging failure
 - `[ ]` re-audit biometric flow against a real secure enclave / keychain / keystore implementation
 - `[ ]` verify safe vault reset on packaged runtime path
 - `[ ]` decide legacy private-note migration or explicit non-support note

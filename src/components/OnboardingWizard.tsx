@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react";
 import { Shield, Fingerprint, Key, Cpu, Link, Calendar, Mail, ChevronLeft, ChevronRight, Globe, Eye, EyeOff, Cloud } from "lucide-react";
 import { CLOUD_PROVIDERS, setCloudKey, type CloudProviderType } from "@/lib/models";
+import {
+  getDeviceCapabilities,
+  isTauriRuntimeAvailable,
+  type DeviceCapabilities,
+} from "@/lib/commands";
 import logo from "@/assets/logo.svg";
 
 interface OnboardingProps {
@@ -49,6 +54,19 @@ const AUTH_METHODS = [
 ];
 
 const TOR_KEY = "zettel-tor-enabled";
+
+const DEFAULT_DEVICE_CAPABILITIES: DeviceCapabilities = {
+  platform: "web",
+  isDesktop: true,
+  isMobile: false,
+  hasSecureEnclave: false,
+  hasTouchId: false,
+  hasFaceId: false,
+  supportsBiometricPrompt: false,
+  canOfferBiometrics: false,
+  supportsPin: true,
+  supportsPassphrase: true,
+};
 
 // Encrypted text scramble effect
 function EncText({ text, speed = 24 }: { text: string; speed?: number }) {
@@ -327,12 +345,26 @@ function BiometricConfirmCard({ onConfirm, onCancel }: { onConfirm: () => void; 
 }
 
 // Step 4: Security (Auth method)
-function SecurityStep({ selected, onSelect, onNext, onBack }: { selected: "biometrics" | "pin" | "passphrase"; onSelect: (m: "biometrics" | "pin" | "passphrase") => void; onNext: () => void; onBack: () => void }) {
+function SecurityStep({
+  selected,
+  methods,
+  capabilities,
+  onSelect,
+  onNext,
+  onBack,
+}: {
+  selected: "biometrics" | "pin" | "passphrase";
+  methods: typeof AUTH_METHODS;
+  capabilities: DeviceCapabilities;
+  onSelect: (m: "biometrics" | "pin" | "passphrase") => void;
+  onNext: () => void;
+  onBack: () => void;
+}) {
   const [showBiometricCard, setShowBiometricCard] = useState(false);
 
   const handleSelect = (id: "biometrics" | "pin" | "passphrase") => {
     onSelect(id);
-    if (id === "biometrics") {
+    if (id === "biometrics" && capabilities.canOfferBiometrics) {
       setShowBiometricCard(true);
     }
   };
@@ -355,10 +387,14 @@ function SecurityStep({ selected, onSelect, onNext, onBack }: { selected: "biome
           Secure your<br /><em className="italic text-muted-foreground">vault.</em>
         </h2>
         <p className="text-sm text-muted-foreground text-center mb-5">
-          Choose how you unlock ViBo. Biometrics first, password as fallback.
+          {capabilities.isDesktop
+            ? "Choose how you unlock ViBo on this desktop device."
+            : capabilities.canOfferBiometrics
+              ? "Choose how you unlock ViBo. Biometrics first, PIN as fallback."
+              : "Choose how you unlock ViBo on this device."}
         </p>
         <div className="flex flex-col gap-2 mb-5">
-          {AUTH_METHODS.map((m) => (
+          {methods.map((m) => (
             <button
               key={m.id}
               onClick={() => handleSelect(m.id)}
@@ -562,9 +598,41 @@ export function OnboardingWizard({ onComplete }: OnboardingProps) {
   const [model, setModel] = useState("instruct-pack");
   const [integrations, setIntegrations] = useState<string[]>([]);
   const [authMethod, setAuthMethod] = useState<"biometrics" | "pin" | "passphrase">("biometrics");
+  const [deviceCapabilities, setDeviceCapabilities] = useState<DeviceCapabilities>(DEFAULT_DEVICE_CAPABILITIES);
   const [enabledProviders, setEnabledProviders] = useState<string[]>([]);
   const [providerKeys, setProviderKeys] = useState<Record<string, string>>({});
   const [torEnabled, setTorEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!isTauriRuntimeAvailable()) {
+      return;
+    }
+
+    void getDeviceCapabilities()
+      .then(setDeviceCapabilities)
+      .catch(() => setDeviceCapabilities(DEFAULT_DEVICE_CAPABILITIES));
+  }, []);
+
+  const availableAuthMethods = AUTH_METHODS.filter((method) => {
+    if (deviceCapabilities.isDesktop) {
+      return method.id === "pin" || method.id === "passphrase";
+    }
+
+    if (deviceCapabilities.isMobile) {
+      if (method.id === "biometrics") {
+        return deviceCapabilities.canOfferBiometrics;
+      }
+      return method.id === "pin";
+    }
+
+    return method.id === "pin" || method.id === "passphrase";
+  });
+
+  useEffect(() => {
+    if (!availableAuthMethods.some((method) => method.id === authMethod)) {
+      setAuthMethod(availableAuthMethods[0]?.id ?? "pin");
+    }
+  }, [authMethod, availableAuthMethods]);
 
   const toggleIntegration = (id: string) => {
     setIntegrations((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -610,7 +678,16 @@ export function OnboardingWizard({ onComplete }: OnboardingProps) {
         {step === "welcome" && <WelcomeStep onNext={() => setStep("model")} />}
         {step === "model" && <ModelStep selected={model} onSelect={setModel} onNext={() => setStep("integrations")} onBack={() => setStep("welcome")} />}
         {step === "integrations" && <IntegrationsStep enabled={integrations} onToggle={toggleIntegration} onNext={() => setStep("security")} onBack={() => setStep("model")} />}
-        {step === "security" && <SecurityStep selected={authMethod} onSelect={setAuthMethod} onNext={() => setStep("name")} onBack={() => setStep("integrations")} />}
+        {step === "security" && (
+          <SecurityStep
+            selected={authMethod}
+            methods={availableAuthMethods}
+            capabilities={deviceCapabilities}
+            onSelect={setAuthMethod}
+            onNext={() => setStep("name")}
+            onBack={() => setStep("integrations")}
+          />
+        )}
         {step === "name" && <NameStep onComplete={finish} onBack={() => setStep("security")} />}
       </div>
     </div>

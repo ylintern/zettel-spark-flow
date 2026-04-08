@@ -1,4 +1,4 @@
-import { BookOpen, Columns3, Network, Plus, Moon, Sun } from "lucide-react";
+import { BookOpen, Columns3, LoaderCircle, Network, Plus, Moon, Sun } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -24,10 +24,11 @@ const views: { id: ViewMode; title: string; icon: typeof BookOpen }[] = [
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const { activeView, setActiveView, addNote } = useStore();
+  const { activeView, setActiveView, addNote, indexingStatus } = useStore();
   const [dark, setDark] = useState(() =>
     document.documentElement.classList.contains("dark")
   );
+  const isIndexing = indexingStatus.progress < 100;
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -41,6 +42,21 @@ export function AppSidebar() {
             <SidebarGroupLabel className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70 mb-1">
               Zettelkasten
             </SidebarGroupLabel>
+          )}
+          {!collapsed && isIndexing && (
+            <div className="mb-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-2">
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                <span>A indexar notas...</span>
+                <span className="ml-auto font-mono">{Math.round(indexingStatus.progress)}%</span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border/70">
+                <div
+                  className="h-full rounded-full bg-foreground transition-all duration-300"
+                  style={{ width: `${indexingStatus.progress}%` }}
+                />
+              </div>
+            </div>
           )}
           <SidebarGroupContent>
             <SidebarMenu>

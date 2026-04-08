@@ -16,23 +16,46 @@ pub struct BiometricConfig {
     pub hardware_backed_release: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceCapabilities {
+    pub platform: &'static str,
+    pub is_desktop: bool,
+    pub is_mobile: bool,
+    pub has_secure_enclave: bool,
+    pub has_touch_id: bool,
+    pub has_face_id: bool,
+    pub supports_biometric_prompt: bool,
+    pub can_offer_biometrics: bool,
+    pub supports_pin: bool,
+    pub supports_passphrase: bool,
+}
+
 pub struct BiometricState {
+    capabilities: DeviceCapabilities,
     config: Mutex<BiometricConfig>,
 }
 
 impl BiometricState {
     pub fn new() -> Self {
+        let capabilities = detect_device_capabilities();
         Self {
+            capabilities: capabilities.clone(),
             config: Mutex::new(BiometricConfig {
                 enabled: false,
-                device_supports_biometric: cfg!(any(target_os = "android", target_os = "ios")),
-                hardware_backed_release: false,
+                device_supports_biometric: capabilities.supports_biometric_prompt,
+                hardware_backed_release: capabilities.can_offer_biometrics,
             }),
         }
     }
 
+    pub fn capabilities(&self) -> DeviceCapabilities {
+        self.capabilities.clone()
+    }
+
     pub fn is_biometric_available(&self) -> bool {
-        self.config.lock().unwrap().device_supports_biometric
+        let cfg = self.config.lock().unwrap();
+        cfg.device_supports_biometric && self.capabilities.can_offer_biometrics
     }
 
     pub fn is_biometric_enabled(&self) -> bool {
@@ -76,7 +99,7 @@ impl BiometricState {
     }
 
     pub fn audit_summary(&self) -> &'static str {
-        if cfg!(any(target_os = "android", target_os = "ios")) {
+        if self.capabilities.is_mobile {
             "Biometric UI path exists, but hardware-backed key release is not implemented yet"
         } else {
             "Biometric vault unlock is mobile-only and unavailable on desktop builds"
@@ -98,12 +121,115 @@ impl BiometricState {
     }
 }
 
+fn detect_device_capabilities() -> DeviceCapabilities {
+    #[cfg(target_os = "ios")]
+    {
+        return DeviceCapabilities {
+            platform: "ios",
+            is_desktop: false,
+            is_mobile: true,
+            has_secure_enclave: true,
+            has_touch_id: true,
+            has_face_id: true,
+            supports_biometric_prompt: true,
+            can_offer_biometrics: false,
+            supports_pin: true,
+            supports_passphrase: false,
+        };
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        return DeviceCapabilities {
+            platform: "android",
+            is_desktop: false,
+            is_mobile: true,
+            has_secure_enclave: false,
+            has_touch_id: true,
+            has_face_id: false,
+            supports_biometric_prompt: true,
+            can_offer_biometrics: false,
+            supports_pin: true,
+            supports_passphrase: false,
+        };
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return DeviceCapabilities {
+            platform: "macos",
+            is_desktop: true,
+            is_mobile: false,
+            has_secure_enclave: false,
+            has_touch_id: false,
+            has_face_id: false,
+            supports_biometric_prompt: false,
+            can_offer_biometrics: false,
+            supports_pin: true,
+            supports_passphrase: true,
+        };
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return DeviceCapabilities {
+            platform: "windows",
+            is_desktop: true,
+            is_mobile: false,
+            has_secure_enclave: false,
+            has_touch_id: false,
+            has_face_id: false,
+            supports_biometric_prompt: false,
+            can_offer_biometrics: false,
+            supports_pin: true,
+            supports_passphrase: true,
+        };
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        return DeviceCapabilities {
+            platform: "linux",
+            is_desktop: true,
+            is_mobile: false,
+            has_secure_enclave: false,
+            has_touch_id: false,
+            has_face_id: false,
+            supports_biometric_prompt: false,
+            can_offer_biometrics: false,
+            supports_pin: true,
+            supports_passphrase: true,
+        };
+    }
+
+    #[allow(unreachable_code)]
+    DeviceCapabilities {
+        platform: "unknown",
+        is_desktop: true,
+        is_mobile: false,
+        has_secure_enclave: false,
+        has_touch_id: false,
+        has_face_id: false,
+        supports_biometric_prompt: false,
+        can_offer_biometrics: false,
+        supports_pin: true,
+        supports_passphrase: true,
+    }
+}
+
 /// Command: Check if device supports biometric authentication
 ///
 /// Returns true on iOS/Android, false on desktop
 #[tauri::command]
 pub async fn is_biometric_available(state: State<'_, AppState>) -> Result<bool, String> {
     Ok(state.biometric.is_biometric_available())
+}
+
+#[tauri::command]
+pub async fn get_device_capabilities(
+    state: State<'_, AppState>,
+) -> Result<DeviceCapabilities, String> {
+    Ok(state.biometric.capabilities())
 }
 
 /// Command: Check if user has enabled biometric unlock

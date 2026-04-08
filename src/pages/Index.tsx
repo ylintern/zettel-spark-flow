@@ -12,8 +12,13 @@ import { LockScreen } from "@/components/LockScreen";
 import { OnboardingWizard, isOnboardingDone } from "@/components/OnboardingWizard";
 import type { OnboardingConfig } from "@/components/OnboardingWizard";
 import { StoreProvider, useStore } from "@/lib/store";
-import { isPinSetup } from "@/lib/crypto";
-import { isTauriRuntimeAvailable, onVaultStatusChanged } from "@/lib/commands";
+import {
+  isTauriRuntimeAvailable,
+  isVaultConfigured,
+  isVaultUnlocked,
+  onVaultStatusChanged,
+} from "@/lib/commands";
+import { deriveVaultPhase, type VaultPhase, type VaultStatus } from "@/lib/vaultPhase";
 import { Plus, MessageCircle, X, SquarePlus } from "lucide-react";
 import logo from "@/assets/logo.svg";
 import type { Note } from "@/lib/types";
@@ -178,15 +183,40 @@ function WorkspaceContent() {
 }
 
 const Index = () => {
-  const [phase, setPhase] = useState<"onboarding" | "lock" | "app">("onboarding");
+  const [phase, setPhase] = useState<VaultPhase>("onboarding");
   const [pin, setPin] = useState("");
   const [initialNotes, setInitialNotes] = useState<Note[]>([]);
 
   useEffect(() => {
-    if (!isOnboardingDone()) return;
-    void isPinSetup()
-      .then(() => setPhase("lock"))
-      .catch(() => setPhase("lock"));
+    if (!isTauriRuntimeAvailable()) {
+      setPhase(isOnboardingDone() ? "lock" : "onboarding");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function syncPhase() {
+      try {
+        const [configured, unlocked] = await Promise.all([
+          isVaultConfigured(),
+          isVaultUnlocked(),
+        ]);
+
+        if (!cancelled) {
+          setPhase(deriveVaultPhase({ configured, unlocked }));
+        }
+      } catch {
+        if (!cancelled) {
+          setPhase("onboarding");
+        }
+      }
+    }
+
+    void syncPhase();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -198,10 +228,13 @@ const Index = () => {
 
     let dispose = () => {};
 
-    void onVaultStatusChanged((payload) => {
-      if (payload.configured && !payload.unlocked) {
-        setPhase("lock");
+    void onVaultStatusChanged((payload: VaultStatus) => {
+      if (!payload.configured) {
+        setPin("");
+        setInitialNotes([]);
       }
+
+      setPhase(deriveVaultPhase(payload));
     }).then((unlisten) => {
       dispose = () => {
         void unlisten();
@@ -219,14 +252,10 @@ const Index = () => {
 
   const handleUnlock = async (enteredPin: string) => {
     setPin(enteredPin);
-    try {
-      const raw = localStorage.getItem("zettel-notes");
-      const notes = raw ? JSON.parse(raw) : [];
-      setInitialNotes(notes);
-      localStorage.removeItem("zettel-notes");
-    } catch {
-      setInitialNotes([]);
-    }
+    // Always start with empty notes — Tauri hydration will load from backend
+    setInitialNotes([]);
+    // Cleanup: legacy migration key must be cleared for users with old data
+    localStorage.removeItem("zettel-notes");
     setPhase("app");
   };
 

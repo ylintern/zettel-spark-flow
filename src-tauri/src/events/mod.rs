@@ -13,6 +13,8 @@ pub struct NoteIndexingProgressEvent {
     pub note_id: Option<String>,
     pub stage: String,
     pub progress: f32,
+    pub processed_notes: usize,
+    pub total_notes: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

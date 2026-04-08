@@ -45,3 +45,17 @@
 - short memo after decisions, audits, smoke tests, or scripts
 - keep memo in the relevant category folder
 - update `current-phase` and `source-of-truth` at the end of every execution
+
+## UX Contract Rule
+- onboarding choices that affect security or storage must match the first real runtime flow
+- do not let UI-only options drift ahead of the implemented lock/security path
+- device-specific security options must come from backend capability truth, not frontend assumptions
+- app root phase must derive from backend vault truth only:
+  - `configured=false` -> onboarding
+  - `configured=true && unlocked=false` -> lock
+  - `configured=true && unlocked=true` -> app
+
+## Bootstrap Rule
+- app-owned storage directories should self-heal on launch
+- bootstrap should be idempotent
+- missing working directories are recreated silently and logged

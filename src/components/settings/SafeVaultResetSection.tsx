@@ -44,22 +44,25 @@ export function SafeVaultResetSection() {
     try {
       await factoryReset();
 
-      localStorage.removeItem('zettel-notes');
-      localStorage.removeItem('zettel-encrypted-notes');
-      localStorage.removeItem('vibo-folders');
-      localStorage.removeItem('zettel-agent-notes');
-      
-      setState({
-        loading: false,
-        showConfirm: false,
-        confirmCount: 0,
-        success: 'Vault has been reset. You can now set up a new vault with a new passphrase.',
-      });
+      // Clear all known localStorage keys to fully reset all storage layers
+      const VIBO_LEGACY_KEYS = [
+        // Legacy zettel-* namespace (older installs)
+        "zettel-notes",
+        "zettel-columns",
+        "zettel-encrypted-notes",
+        "zettel-agent-notes",
+        // Current vibo-* namespace
+        "vibo-notes",
+        "vibo-columns",
+        "vibo-folders",
+        "vibo-pin",
+        "vibo-salt",
+        "vibo-agent-notes",
+      ];
+      VIBO_LEGACY_KEYS.forEach((key) => localStorage.removeItem(key));
 
-      // Clear success message after 5 seconds
-      setTimeout(() => {
-        setState(prev => ({ ...prev, success: undefined }));
-      }, 5000);
+      // Force full app reload to reinitialize all state
+      window.location.reload();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to reset vault';
       setState(prev => ({

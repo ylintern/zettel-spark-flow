@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { Note } from "./types";
+import type { Note, KanbanColumn } from "./types";
 
 export interface WorkspaceSnapshot {
   notes: Note[];
   folders: string[];
+  columns: KanbanColumn[];
 }
 
 interface SecretValue {
@@ -15,6 +16,8 @@ export interface NoteIndexingProgressEvent {
   noteId: string | null;
   stage: string;
   progress: number;
+  processedNotes: number;
+  totalNotes: number;
 }
 
 export interface AgentThinkingDeltaEvent {
@@ -27,6 +30,19 @@ export interface VaultStatusChangedEvent {
   configured: boolean;
   unlocked: boolean;
   reason: string;
+}
+
+export interface DeviceCapabilities {
+  platform: string;
+  isDesktop: boolean;
+  isMobile: boolean;
+  hasSecureEnclave: boolean;
+  hasTouchId: boolean;
+  hasFaceId: boolean;
+  supportsBiometricPrompt: boolean;
+  canOfferBiometrics: boolean;
+  supportsPin: boolean;
+  supportsPassphrase: boolean;
 }
 
 export function isTauriRuntimeAvailable(): boolean {
@@ -51,6 +67,14 @@ export async function deleteWorkspaceNote(id: string): Promise<void> {
 
 export async function createWorkspaceFolder(name: string): Promise<void> {
   return tauriInvoke<void>("create_folder", { name });
+}
+
+export async function saveWorkspaceColumn(column: KanbanColumn): Promise<void> {
+  return tauriInvoke<void>("save_column", { column });
+}
+
+export async function deleteWorkspaceColumn(id: string): Promise<void> {
+  return tauriInvoke<void>("delete_column", { id });
 }
 
 export async function setupSecureVault(passphrase: string): Promise<void> {
@@ -88,6 +112,18 @@ export async function deleteSecretFromVault(key: string): Promise<void> {
 
 export async function factoryReset(): Promise<void> {
   return tauriInvoke<void>("factory_reset");
+}
+
+export async function getDeviceCapabilities(): Promise<DeviceCapabilities> {
+  return tauriInvoke<DeviceCapabilities>("get_device_capabilities");
+}
+
+export async function verifyBiometricUnlock(): Promise<boolean> {
+  return tauriInvoke<boolean>("verify_biometric_and_unlock");
+}
+
+export async function fallbackPassphraseUnlock(passphrase: string): Promise<void> {
+  return tauriInvoke<void>("fallback_passphrase_unlock", { passphrase });
 }
 
 async function subscribeToEvent<T>(

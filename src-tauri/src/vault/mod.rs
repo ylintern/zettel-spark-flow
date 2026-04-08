@@ -1,12 +1,19 @@
 use std::{fs, path::Path};
 
 use anyhow::Context;
+use tauri::AppHandle;
 
-use crate::{models::WorkspaceNote, security::SecurityState};
+use crate::{
+    events::{self, NoteIndexingProgressEvent},
+    models::WorkspaceNote,
+    security::SecurityState,
+};
 
 pub fn ensure_vault_dirs(vault_dir: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(vault_dir.join("notes"))
         .with_context(|| format!("failed to create vault dir {}", vault_dir.display()))?;
+    fs::create_dir_all(vault_dir.join("kanban"))
+        .with_context(|| format!("failed to create kanban dir {}", vault_dir.display()))?;
     Ok(())
 }
 
@@ -58,6 +65,35 @@ pub fn read_note(
     }
 
     Ok(body)
+}
+
+pub fn emit_indexing_progress(
+    app: &AppHandle,
+    note_id: Option<&str>,
+    processed_notes: usize,
+    total_notes: usize,
+) -> anyhow::Result<()> {
+    let progress = if total_notes == 0 {
+        100.0
+    } else {
+        ((processed_notes as f32 / total_notes as f32) * 100.0).clamp(0.0, 100.0)
+    };
+
+    events::emit_note_indexing_progress(
+        app,
+        &NoteIndexingProgressEvent {
+            note_id: note_id.map(ToOwned::to_owned),
+            stage: if progress >= 100.0 {
+                "complete".to_string()
+            } else {
+                "loading".to_string()
+            },
+            progress,
+            processed_notes,
+            total_notes,
+        },
+    )
+    .map_err(|err| anyhow::anyhow!(err))
 }
 
 pub fn delete_note(vault_dir: &Path, relative_path: &str) -> anyhow::Result<()> {

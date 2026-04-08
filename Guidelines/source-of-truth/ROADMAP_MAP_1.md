@@ -24,9 +24,14 @@
   - storage boundaries
   - user flow vs agent flow separation
 - next integration gate before real agent flow:
+  - P1 criticals QA:
+    - folder bootstrap recreation
+    - factory reset -> onboarding
+    - normal unlock regression
+    - simple note + kanban persistence QA
+    - private-note encrypt/decrypt UX contract
   - Rust -> UI event bus
   - caller-aware command boundary
   - context bundle service
-- Phase 0 stays open until:
-  - packaged Mac app cold-start validation passes
-  - biometric path is either hardware-backed or explicitly deferred
+- Gate 0 is treated as passed for sequencing
+- biometric path is still either hardware-backed later or explicitly deferred

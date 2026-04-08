@@ -5,9 +5,10 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
     Row, SqlitePool,
 };
+use tauri::AppHandle;
 
 use crate::{
-    models::{WorkspaceNote, WorkspaceSnapshot},
+    models::{KanbanColumn, WorkspaceNote, WorkspaceSnapshot},
     security::SecurityState,
     vault,
 };
@@ -61,6 +62,7 @@ pub async fn load_workspace_snapshot(
     pool: &SqlitePool,
     vault_dir: &Path,
     security: &SecurityState,
+    app: Option<&AppHandle>,
 ) -> anyhow::Result<WorkspaceSnapshot> {
     let note_rows = sqlx::query(
         r#"
@@ -72,14 +74,20 @@ pub async fn load_workspace_snapshot(
     .fetch_all(pool)
     .await?;
 
-    let mut notes = Vec::with_capacity(note_rows.len());
+    let total_notes = note_rows.len();
+    let mut notes = Vec::with_capacity(total_notes);
 
-    for row in note_rows {
+    if let Some(app) = app {
+        vault::emit_indexing_progress(app, None, 0, total_notes)?;
+    }
+
+    for (index, row) in note_rows.into_iter().enumerate() {
         let id: String = row.try_get("id")?;
         let relative_path: String = row.try_get("file_path")?;
         let tags = load_tags(pool, &id).await?;
         let is_encrypted = row.try_get::<i64, _>("is_encrypted")? != 0;
         let content = vault::read_note(vault_dir, &relative_path, is_encrypted, security)?;
+        let event_note_id = id.clone();
 
         notes.push(WorkspaceNote {
             id,
@@ -94,6 +102,10 @@ pub async fn load_workspace_snapshot(
             folder: row.try_get("folder")?,
             is_encrypted: Some(is_encrypted),
         });
+
+        if let Some(app) = app {
+            vault::emit_indexing_progress(app, Some(&event_note_id), index + 1, total_notes)?;
+        }
     }
 
     let folder_rows = sqlx::query("SELECT name FROM folders ORDER BY name ASC")
@@ -105,7 +117,15 @@ pub async fn load_workspace_snapshot(
         .map(|row| row.try_get("name"))
         .collect::<Result<Vec<String>, _>>()?;
 
-    Ok(WorkspaceSnapshot { notes, folders })
+    let columns = load_columns(pool).await?;
+
+    if total_notes == 0 {
+        if let Some(app) = app {
+            vault::emit_indexing_progress(app, None, 0, 0)?;
+        }
+    }
+
+    Ok(WorkspaceSnapshot { notes, folders, columns })
 }
 
 pub async fn save_note(
@@ -220,6 +240,54 @@ async fn load_tags(pool: &SqlitePool, note_id: &str) -> anyhow::Result<Vec<Strin
     Ok(tags)
 }
 
+pub async fn load_columns(pool: &SqlitePool) -> anyhow::Result<Vec<KanbanColumn>> {
+    let rows = sqlx::query("SELECT id, title, \"order\" FROM columns ORDER BY \"order\" ASC")
+        .fetch_all(pool)
+        .await?;
+
+    let columns = rows
+        .into_iter()
+        .map(|row| -> anyhow::Result<KanbanColumn> {
+            Ok(KanbanColumn {
+                id: row.try_get("id")?,
+                title: row.try_get("title")?,
+                order: row.try_get("order")?,
+            })
+        })
+        .collect::<Result<Vec<KanbanColumn>, _>>()?;
+
+    Ok(columns)
+}
+
+pub async fn save_column(pool: &SqlitePool, column: &KanbanColumn) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO columns (id, title, "order", created_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          title = excluded.title,
+          "order" = excluded."order"
+        "#,
+    )
+    .bind(&column.id)
+    .bind(&column.title)
+    .bind(column.order)
+    .bind(chrono::Utc::now().to_rfc3339())
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn delete_column(pool: &SqlitePool, id: &str) -> anyhow::Result<()> {
+    sqlx::query("DELETE FROM columns WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
 async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::query(
         r#"
@@ -257,6 +325,19 @@ async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
         r#"
         CREATE TABLE IF NOT EXISTS folders (
           name TEXT PRIMARY KEY,
+          created_at TEXT NOT NULL
+        );
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS columns (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          "order" INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL
         );
         "#,
@@ -315,7 +396,7 @@ mod tests {
             pool.close().await;
 
             let reopened_pool = init_pool(&db_path).await.expect("failed to reopen db");
-            let snapshot = load_workspace_snapshot(&reopened_pool, &vault_dir, &security)
+            let snapshot = load_workspace_snapshot(&reopened_pool, &vault_dir, &security, None)
                 .await
                 .expect("failed to load snapshot after restart");
 
