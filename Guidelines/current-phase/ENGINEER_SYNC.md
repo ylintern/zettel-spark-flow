@@ -1,111 +1,94 @@
 # Engineer Sync
 
-## What Changed
-- app launch now bootstraps missing vault subdirectories idempotently:
-  - `vault/`
-  - `vault/notes/`
-  - `vault/kanban/`
-- root app phase now derives from backend vault truth through `src/lib/vaultPhase.ts`
-- frontend now handles all 3 vault states correctly:
-  - `configured=false` -> onboarding
-  - `configured=true && unlocked=false` -> lock
-  - `configured=true && unlocked=true` -> app
-- factory reset routing now clears root secure session state and returns to onboarding via `vault_status_changed`
-- vault helpers now recreate both `notes` and `kanban` directories after destructive reset paths
-- cold-start persistence test now exists in Rust and passes
-- factory reset now clears:
-  - Stronghold snapshot
-  - SQLite db + wal/shm
-  - Markdown vault
-- event bus module now exists
-- `vault_status_changed` has a real frontend subscription path
-- security commands now use managed `AppState` instead of orphan state types
-- lock/setup flow now respects `authMethod` chosen during onboarding
-- setup/unlock errors now surface in the UI instead of failing silently
-- Rust now exposes device capabilities to the frontend
-- onboarding security choices are filtered by device class
-- production macOS `.app` bundle built with `com.vibo.zettel-spark-flow`
-- Rust now emits real note indexing progress during workspace hydration
-- store now keeps a global `indexingStatus` fed by the event bus
-- sidebar now shows a subtle indexing progress state during startup
+**Last Updated**: 2026-04-08  
+**Status**: Build fixed. Core gate passed. QA tail open.
 
-## Current Boundary
-- private notes encrypt in Rust before disk write
-- cloud/API secrets use secure vault commands
-- biometric implementation is intentionally treated as untrusted until a hardware-backed release path exists
-- Gate 0 runtime path is considered passed for roadmap sequencing
-- P1 criticals now need manual QA:
-  - folder recreation on launch
-  - factory reset -> onboarding
-  - normal unlock regression
-- folder recreation on launch now has one packaged-app PASS
-- simple note + kanban create/edit/relaunch flow still needs real user QA
-- private-note encrypt/decrypt UX contract is still incomplete at the UI layer
-- legacy browser-encrypted private notes are not migrated
-- caller-aware writes and audit table are still pending
+---
 
-## Files Touched This Pass
-- `src-tauri/tauri.conf.json`
-- `src-tauri/src/state.rs`
-- `src-tauri/src/lib.rs`
-- `src-tauri/src/events/mod.rs`
-- `src-tauri/src/security/mod.rs`
-- `src-tauri/src/security/biometric.rs`
-- `src-tauri/src/db/mod.rs`
-- `src-tauri/src/vault/mod.rs`
-- `src-tauri/src/commands/workspace.rs`
-- `src/lib/commands.ts`
-- `src/lib/store.tsx`
-- `src/pages/Index.tsx`
-- `src/components/AppSidebar.tsx`
-- `src/components/settings/SafeVaultResetSection.tsx`
-- `src/components/settings/BiometricsSection.tsx`
-- `src/components/LockScreen.tsx`
-- `src/components/OnboardingWizard.tsx`
-- `src/lib/vaultPhase.ts`
-- `src-tauri/src/vault/mod.rs`
+## What Is Working Now
 
-## Why This Matters
-- frontend and backend are finally close enough to connect inference without rewriting storage
-- but the next blocker is still not models, it is integration infrastructure
-- streaming and agent state now have an event path to build on, but only vault status is wired end-to-end so far
-- onboarding and first secure unlock no longer contradict each other
-- the app now decides security UX from backend capability truth instead of frontend guesswork
-- startup now has a real Rust -> UI progress path instead of looking frozen during hydration
-- app-owned folder bootstrap is now self-healing instead of assuming a perfect on-disk state
-- reset routing now follows backend truth instead of a partial frontend branch
+- Dev and release builds use separate data dirs (`com.viboai.app.dev` / `com.viboai.app`)
+- Crypto crates optimized in debug mode — vault setup ~5s (was 80s+)
+- Vault phase derives from backend truth: `configured` + `unlocked` → onboarding / lock / app
+- SHA-256 canonical key derivation in `security/mod.rs` — confirmed working
+- Stronghold-backed passphrase/PIN setup and unlock
+- Factory reset clears Stronghold + SQLite + Markdown vault
+- Folder bootstrap self-heals `vault/notes/` and `vault/kanban/` on every launch
+- Kanban columns and folders are backend-authoritative (SQLite, no localStorage)
+- Event bus exists: `vault_status_changed` and `note_indexing_progress` wired end-to-end
+- Device capabilities exposed to frontend from Rust
+- `scripts/qa_lifecycle.py` — 8/8 checks pass
 
-## What Changed (2026-04-08, Copilot + Lead session)
-- bundle ID changed from `com.vibo.zettel-spark-flow` to `com.viboai.app`
-- data migration code added to lib.rs setup (moves old data dir to new)
-- Stronghold key derivation fixed: `derive_vault_key()` now uses SHA-256 for canonical 32-byte output
-- Kanban columns migrated from localStorage to SQLite (columns table, save/delete commands)
-- Folders now backend-authoritative (no localStorage sync)
-- toggleNoteEncryption reverted to spec (optimistic + rollback, no passphrase re-entry)
-- `[!]` **White screen regression**: `loadAgentNotes` / `saveAgentNotes` imports were dropped from store.tsx during edit. Fixed by restoring imports.
-- QA lifecycle script created (scripts/qa_lifecycle.py)
+---
 
-## Current Boundary (Updated)
-- Stronghold key derivation is now correct (SHA-256, 32 bytes)
-- Kanban columns, folders, notes all backed by SQLite/Rust
+## What Is Still Open
+
+| Item | Status | Blocker? |
+|------|--------|----------|
+| Reset routing → onboarding | `[ ]` QA pending | Yes — Phase 0 close |
+| Normal unlock regression | `[ ]` QA pending | Yes — Phase 0 close |
+| Note persistence after relaunch | `[ ]` QA pending | Yes — Phase 0 close |
+| Kanban persistence after relaunch | `[ ]` QA pending | Yes — Phase 0 close |
+| Private note encrypt/decrypt UX | `[ ]` QA pending | Yes — Phase 0 close |
+| Duplicate reset UX (Settings) | `[ ]` Review pending | Minor |
+| `agent_thinking_delta` event wired | `[ ]` Phase 1 | No |
+| Caller-aware command boundary | `[ ]` Phase 1 | No |
+| React Error Boundary on Index.tsx | `[ ]` Hygiene | No |
+| tsconfig strict mode | `[ ]` Hygiene | No |
+| Agent notes localStorage → SQLite | `[ ]` Decision pending | No |
+| Biometrics hardware-backed | `[!]` Deferred | No |
+
+---
+
+## Storage Authority
+
+| Data | Owner | Location |
+|------|-------|----------|
+| Note content (markdown) | Vault module (Rust) | `vault/notes/` |
+| Note metadata | DB module (Rust) | SQLite `notes` table |
+| Kanban columns | DB module (Rust) | SQLite `columns` table |
+| Folders | DB module (Rust) | SQLite `folders` table |
+| Vault keys / secrets | Security module (Rust) | Stronghold `secure-vault.hold` |
+| Vectors / embeddings | Swiftide pipeline | Phase 3 — not yet |
+| Agent memory | Agent module | Phase 4 — not yet |
+
+**Invariant**: No app-critical data in browser localStorage.
+
+---
+
+## Key Files
+
+| File | Role |
+|------|------|
+| `src-tauri/src/security/mod.rs` | Stronghold wrapper, `derive_vault_key()`, setup/unlock/lock |
+| `src-tauri/src/vault/mod.rs` | Note read/write, encryption |
+| `src-tauri/src/db/mod.rs` | SQLite migrations, all queries |
+| `src-tauri/src/commands/workspace.rs` | Tauri IPC endpoints |
+| `src-tauri/src/events/mod.rs` | Event bus definitions |
+| `src-tauri/src/lib.rs` | App setup, bootstrap, plugin registration |
+| `src/lib/vaultPhase.ts` | Single source of truth for phase derivation |
+| `src/lib/store.tsx` | Frontend state, hydration from backend |
+| `src/pages/Index.tsx` | Root — phase routing, vault_status_changed listener |
+| `scripts/qa_lifecycle.py` | 8-check QA lifecycle inspector |
+| `src-tauri/tauri.dev.conf.json` | Dev identifier override (`com.viboai.app.dev`) |
+
+---
+
+## Active Rules
+
 - Private notes encrypt in Rust before disk write
-- Cloud/API secrets use secure vault commands
-- Biometric implementation is intentionally treated as untrusted until hardware-backed
-- Agent notes still in localStorage (decision needed: ephemeral or migrate to SQLite?)
-- `tsconfig.app.json` has `strict: false` — many runtime bugs invisible at build time
+- Cloud/API secrets use secure vault commands only
+- Biometric implementation is untrusted until hardware-backed release exists
+- `Cargo.toml` dependency added → module must be `use`d → command registered in `lib.rs`
+- Phase derivation computed only by `deriveVaultPhase()` in `vaultPhase.ts`
+- `swiftide`, `swiftide-agents`, `tauri-plugin-velesdb`, `tauri-plugin-leap-ai` commented out until Phase 1–3 modules are written
 
-## Next Recommended Slice
-- `[!]` verify data migration ran correctly on test machine (check both old and new Application Support dirs)
-- finish app-core QA before AI foundation work:
-  - `[x]` folder bootstrap recreation
-  - `[ ]` reset routing -> onboarding
-  - `[ ]` normal unlock regression
-  - `[ ]` simple note persistence after relaunch
-  - `[ ]` kanban task persistence after relaunch
-  - `[ ]` private-note encrypt/decrypt UX contract + QA
-- `[ ]` add React Error Boundary to Index.tsx (prevents future white screens)
-- `[ ]` tighten tsconfig (noImplicitAny: true, strictNullChecks: true)
-- only after those pass:
-  - model manager implementation
-  - context bundle service
-  - LEAP runtime bridge
+---
+
+## Next Recommended Order
+
+1. Run Phase 0 QA tail (tests 2–7 in `PHASE_0_EXECUTION_BOARD.md`)
+2. Once QA passes, proceed to P1-B caller-aware command boundary
+3. Then P1-C context bundle service
+4. Then P1-D LEAP runtime hookup
+5. Do not start model manager or Swiftide until app-core gate is fully passed

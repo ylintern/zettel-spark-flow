@@ -1,37 +1,63 @@
 # Roadmap Map 1
 
-## Structure
-- sequential phases
-- audit gate at the end of each phase
+**Last Updated**: 2026-04-08
+
+---
 
 ## Phase Order
-| Phase | Focus |
-| --- | --- |
-| 0 | app foundation, storage, CRUD, security |
-| 1 | local inference integration |
-| 2 | cloud model integration |
-| 3 | RAG pipeline |
-| 4 | agentic layer |
-| 5 | polish and hardening |
 
-## Current CTO Read
-- frontend has reached beyond Phase 0 visually
-- execution should still resume from Phase 0 foundations
-- cross-phase preparation is allowed only if it reduces rework and respects source objectives
-- audits remain mandatory at the end of phases
-- current cross-phase prep allowed now:
-  - stable IDs
-  - storage boundaries
-  - user flow vs agent flow separation
-- next integration gate before real agent flow:
-  - P1 criticals QA:
-    - folder bootstrap recreation
-    - factory reset -> onboarding
-    - normal unlock regression
-    - simple note + kanban persistence QA
-    - private-note encrypt/decrypt UX contract
-  - Rust -> UI event bus
-  - caller-aware command boundary
-  - context bundle service
-- Gate 0 is treated as passed for sequencing
-- biometric path is still either hardware-backed later or explicitly deferred
+| Phase | Focus | Status |
+|-------|-------|--------|
+| 0 | App foundation, storage, CRUD, security | `[~]` QA tail open |
+| 1 | Local inference integration | `[ ]` Infrastructure started |
+| 2 | Cloud model integration | `[ ]` Not started |
+| 3 | RAG pipeline | `[ ]` Not started |
+| 4 | Agentic layer | `[ ]` Not started |
+| 5 | Polish and hardening | `[ ]` Not started |
+
+Canonical source: `/VIBO_ROADMAP (1).md`
+
+---
+
+## Current Position
+
+**Phase 0 — Sign-Off Tail**
+
+- Core gate passed (build, storage, event bus, folder bootstrap)
+- QA tail open: reset routing, unlock regression, note/kanban persistence, private note UX
+- Allowed to start Phase 1 infrastructure in parallel (event bus, caller-aware commands)
+- Not allowed to claim Phase 0 closed until QA tail passes
+
+**Phase 1 — Infrastructure Started**
+
+- Event bus exists, `vault_status_changed` and `note_indexing_progress` wired
+- Caller-aware commands, context bundle, LEAP hookup — all pending
+
+---
+
+## Rules
+
+- Sequential phases — audit gate required at end of each
+- Cross-phase prep allowed only if it reduces rework and respects source objectives
+- Frontend must not drift ahead of implemented backend
+- Gate 0 is treated as passed for sequencing purposes
+
+---
+
+## Next Integration Gate (Before Real Agent Flow)
+
+- `[ ]` Reset routing → onboarding QA
+- `[ ]` Normal unlock regression QA
+- `[ ]` Note + kanban persistence QA
+- `[ ]` Private-note encrypt/decrypt UX contract
+- `[ ]` Caller-aware command boundary (P1-B)
+- `[ ]` Context bundle service (P1-C)
+- `[~]` Rust → UI event bus (P1-A) — in progress
+
+---
+
+## Deferred (Explicit)
+
+- Biometric hardware-backed unlock — deferred until secure enclave/keychain path exists
+- DMG packaging — `.app` works, `.dmg` fails, explicitly deferred
+- Swiftide / LEAP / VelesDB — Phase 1–3, commented out of `Cargo.toml`
