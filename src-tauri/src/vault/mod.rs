@@ -11,9 +11,9 @@ use crate::{
 
 pub fn ensure_vault_dirs(vault_dir: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(vault_dir.join("notes"))
-        .with_context(|| format!("failed to create vault dir {}", vault_dir.display()))?;
-    fs::create_dir_all(vault_dir.join("kanban"))
-        .with_context(|| format!("failed to create kanban dir {}", vault_dir.display()))?;
+        .with_context(|| format!("failed to create notes dir {}", vault_dir.display()))?;
+    fs::create_dir_all(vault_dir.join("tasks"))
+        .with_context(|| format!("failed to create tasks dir {}", vault_dir.display()))?;
     Ok(())
 }
 
@@ -30,6 +30,10 @@ pub fn note_relative_path(note_id: &str) -> String {
     format!("notes/{note_id}.md")
 }
 
+pub fn task_relative_path(note_id: &str) -> String {
+    format!("tasks/{note_id}.md")
+}
+
 pub fn write_note(
     vault_dir: &Path,
     note: &WorkspaceNote,
@@ -37,7 +41,11 @@ pub fn write_note(
 ) -> anyhow::Result<String> {
     ensure_vault_dirs(vault_dir)?;
 
-    let relative_path = note_relative_path(&note.id);
+    let relative_path = if note.is_kanban {
+        task_relative_path(&note.id)
+    } else {
+        note_relative_path(&note.id)
+    };
     let absolute_path = vault_dir.join(&relative_path);
     let markdown = render_markdown(note, security)?;
 

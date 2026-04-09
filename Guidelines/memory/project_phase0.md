@@ -1,32 +1,48 @@
 ---
 name: Phase 0 — Current Task State
-description: Active build fix + core feature tasks; gate before any Phase 1 AI work
+description: Active Phase 0 QA tail; gate before any deep Phase 1 work
 type: project
 ---
 
-Source: claudepush.md (2026-04-08). Phase 0 must complete before any AI/inference work.
+Source: AUDIT_LOG.md 2026-04-08. Core App Gate passed. Only QA tail remains.
+
+**Why:** Phase 0 must be fully signed off before model manager, context service, or LEAP work starts.
+**How to apply:** Do not start Phase 1 AI tasks while any QA item below is open.
 
 ## Build Status
-Build broken: stale Cargo artifacts for `crunchy` and `rust_decimal`.
-Fix: delete `target/debug/build/crunchy-*` and `target/debug/build/rust_decimal-*` then `cargo build`.
-**NOT yet executed — awaiting user approval.**
+Build working as of 2026-04-08.
+- Dev: `bun run tauri:dev` — uses `com.viboai.app.dev` data dir
+- Release: `bun run tauri:build`
+- `cargo test` will FAIL — `services/retrieval.rs` has broken test stubs (fix deferred to P1-C implementation)
 
-## Task Queue (sequential, approval before each)
-| # | Task | Status |
+## Completed (locked)
+| Task | Status | Notes |
+|------|--------|-------|
+| Stale Cargo cache fix | DONE | Cache cleared 2026-04-08 |
+| SHA-256 key derivation | DONE | `derive_vault_key()` in security/mod.rs |
+| Dev/release data isolation | DONE | `tauri.dev.conf.json` → `com.viboai.app.dev` |
+| Folder bootstrap | DONE | PASS 2026-04-08 |
+| Kanban/folders to SQLite | DONE | No localStorage |
+| Phase routing (vaultPhase.ts) | DONE | Confirmed working |
+
+## QA Tail — Required Before Phase 0 Sign-Off
+| # | Item | Status |
 |---|------|--------|
-| T-1 | Fix stale Cargo cache (crunchy + rust_decimal) | PENDING |
-| T-2 | Verify password persistence (manual QA — no code) | PENDING |
-| T-3 | Rename data paths: vault/ → database/notes/ + database/tasks/ | PENDING |
-| T-4 | Notes CRUD + bootstrap database/notes/original/ | PENDING |
-| T-5 | Tasks/Kanban CRUD + delegated_to field + bootstrap database/tasks/original/ | PENDING |
-| T-6 | Data isolation audit + audit_data_dirs() IPC command | PENDING |
+| T1 | Verify directory structure | pending — run script |
+| T2 | Normal unlock regression | ✅ PASS — confirmed by Lead 2026-04-09 |
+| T3 | Factory reset → onboarding | pending |
+| T4 | Note + task persistence after relaunch | pending — test artifacts created |
+| T5 | Private note toggle UX | 🚫 DEFERRED — moved to Phase 1 |
 
-## Phase 0 Complete Gate
-- cargo build exits 0
-- Lock screen shows on app reopen (not onboarding)
-- Both database/ dirs bootstrap with original/ subfolder
-- Notes and tasks each persist as .md files
-- Notes view shows ZERO tasks; kanban shows ZERO notes
-- audit_data_dirs() returns all-true
+## Decisions LOCKED (2026-04-09)
+- Two reset flows are INTENTIONAL: pass/PIN/biometric reset (data survives) + full database reset (wipe)
+- Task files live at `database/tasks/{id}.md` — confirmed by Lead
+- Private note toggle deferred to Phase 1
 
-**Why:** Phase 0 establishes the working app core. No AI features (LEAP, Swiftide, RAG) until Phase 0 gate passes.
+## Storage Paths — CONFIRMED by Lead (2026-04-09)
+- Notes: `{app_data}/database/notes/{id}.md`
+- Tasks: `{app_data}/database/tasks/{id}.md`
+- DB: `{app_data}/vibo.db`
+- Stronghold: `{app_data}/secure-vault.hold`
+- macOS dev: `~/Library/Application Support/com.viboai.app.dev/`
+- **Code still uses `vault/` — rename pending Lead approval of diff**

@@ -83,7 +83,7 @@ export const LOCAL_MODELS: LocalModel[] = [
 
 // ── Cloud Providers ───────────────────────────────────────────
 
-export type CloudProviderType = "ollama" | "openrouter" | "anthropic" | "gemini" | "kimi" | "minimax";
+export type CloudProviderType = "ollama" | "openrouter" | "anthropic" | "gemini" | "kimi" | "minimax" | "local";
 
 export interface CloudProvider {
   id: CloudProviderType;
@@ -93,18 +93,44 @@ export interface CloudProvider {
   description: string;
   baseUrl?: string;
   models?: string[]; // available models for selection
+  hidden?: boolean;  // not shown in Settings UI — reserved for future use
+}
+
+// Canonical storage key for each provider's credential
+export function cloudProviderSecretKey(id: CloudProviderType): string {
+  if (id === "ollama") return "ollama_endpoint";
+  if (id === "local") return "local_endpoint";
+  return `${id}_api_key`;
 }
 
 export const CLOUD_PROVIDERS: CloudProvider[] = [
+  // ── Visible providers ─────────────────────────────────────────
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    type: "apikey",
+    placeholder: "sk-ant-...",
+    description: "Claude models for deep reasoning and analysis.",
+    baseUrl: "https://api.anthropic.com/v1",
+    models: ["claude-opus-4-5", "claude-sonnet-4-5", "claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307"],
+  },
   {
     id: "ollama",
-    name: "Ollama",
+    name: "Ollama (Cloud)",
     type: "host",
     placeholder: "https://ollama.com/api",
-    description: "Cloud-hosted Ollama inference. Connect to ollama.com API.",
+    description: "Cloud-hosted Ollama inference endpoint URL.",
     baseUrl: "https://ollama.com/api",
-    models: ["llama3.1:8b", "llama3.1:70b", "llama3.1:405b", "mistral:7b", "mixtral:8x7b", "codellama:34b", "gemma2:27b", "phi3:14b", "qwen2:72b", "deepseek-coder-v2:16b"],
+    models: ["llama3.1:8b", "llama3.1:70b", "mistral:7b", "mixtral:8x7b", "gemma2:27b", "qwen2:72b"],
   },
+  {
+    id: "local",
+    name: "Local Models — OpenAI-compatible",
+    type: "host",
+    placeholder: "http://localhost:1234/v1",
+    description: "Any OpenAI-format server: LM Studio, llama.cpp, Ollama local, etc.",
+  },
+  // ── Hidden providers (reserved for future use — do not delete) ─
   {
     id: "openrouter",
     name: "OpenRouter",
@@ -113,15 +139,7 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
     description: "Access 200+ models via OpenRouter API.",
     baseUrl: "https://openrouter.ai/api/v1",
     models: ["openai/gpt-4o", "openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "anthropic/claude-3-opus", "google/gemini-pro-1.5", "meta-llama/llama-3.1-405b", "mistralai/mixtral-8x22b"],
-  },
-  {
-    id: "anthropic",
-    name: "Anthropic",
-    type: "apikey",
-    placeholder: "sk-ant-...",
-    description: "Claude models for deep reasoning and analysis.",
-    baseUrl: "https://api.anthropic.com/v1",
-    models: ["claude-3.5-sonnet", "claude-3-opus", "claude-3-sonnet", "claude-3-haiku"],
+    hidden: true,
   },
   {
     id: "gemini",
@@ -131,6 +149,7 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
     description: "Google AI Studio — Gemini models for reasoning and multi-modal tasks.",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     models: ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.0-pro"],
+    hidden: true,
   },
   {
     id: "kimi",
@@ -140,6 +159,7 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
     description: "Moonshot AI's Kimi for long-context reasoning.",
     baseUrl: "https://api.moonshot.cn/v1",
     models: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+    hidden: true,
   },
   {
     id: "minimax",
@@ -149,6 +169,7 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
     description: "MiniMax models for multi-modal generation.",
     baseUrl: "https://api.minimax.chat/v1",
     models: ["abab6.5-chat", "abab6.5s-chat", "abab5.5-chat"],
+    hidden: true,
   },
 ];
 
@@ -169,6 +190,7 @@ let cloudKeysCache: Record<CloudProviderType, string> = {
   gemini: "",
   kimi: "",
   minimax: "",
+  local: "",
 };
 
 export function getActiveLocalModel(): string {
@@ -196,7 +218,7 @@ export function removeDownloadedModel(id: string) {
 }
 
 function cloudSecretKey(provider: CloudProviderType): string {
-  return `cloud:${provider}`;
+  return cloudProviderSecretKey(provider);
 }
 
 export function getCloudKeys(): Record<CloudProviderType, string> {
@@ -204,14 +226,14 @@ export function getCloudKeys(): Record<CloudProviderType, string> {
 }
 
 export async function loadCloudKeys(): Promise<Record<CloudProviderType, string>> {
+  const providers = CLOUD_PROVIDERS.map((item) => item.id);
+  const values = await Promise.all(
+    providers.map((p) => getSecretFromVault(cloudSecretKey(p)).catch(() => null))
+  );
   const next = { ...cloudKeysCache };
-  for (const provider of CLOUD_PROVIDERS.map((item) => item.id)) {
-    try {
-      next[provider] = (await getSecretFromVault(cloudSecretKey(provider))) || "";
-    } catch {
-      next[provider] = "";
-    }
-  }
+  providers.forEach((p, i) => {
+    next[p] = values[i] || "";
+  });
   cloudKeysCache = next;
   return getCloudKeys();
 }

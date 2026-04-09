@@ -17,19 +17,28 @@ Source: whitepaper rev 1.0. Current Phase 0 paths may differ — verify against 
 | redb | embedded (Swiftide NodeCache) | ingestion pipeline dedup cache |
 
 ## Critical Rules
-- **Tasks**: SQLite ONLY — no .md file. Kanban rendered from SQL, not parsed markdown.
-- **Notes**: .md file is canonical content. SQLite stores metadata only.
+- **Notes**: `.md` file is canonical content. SQLite stores metadata only.
+- **Tasks**: `database/tasks/{id}.md` is canonical content. SQLite stores metadata only (kind='task'). No separate tasks table.
 - **Secure notes**: never chunked, never embedded, never in velesdb.
 - **Conversation messages**: stored in SQL; recalled by recency SELECT, not vector search.
 
 ## Update Contracts
-- Note edited → write .md + update SQLite `updated_at` → queue reindex (redb skips unchanged chunks)
+- Note edited → write `.md` to `database/notes/` + update SQLite `updated_at` → queue reindex (redb skips unchanged chunks)
+- Task created/edited → write `.md` to `database/tasks/` + upsert SQLite row with `kind='task'`
 - Task status toggled → SQLite only, no re-embed
-- Task description edited → SQLite + queue re-embed
 - Session resumed → SELECT messages WHERE session_id = last_active → leap.create_conversation_from_history()
 
-## Current Phase 0 Paths (verify in lib.rs — may differ from whitepaper)
-- Target: `{app_data}/database/notes/` and `{app_data}/database/tasks/`
+## Canonical Storage Map (confirmed by Lead — 2026-04-09)
+
+| Data | File path | SQLite |
+|------|-----------|--------|
+| Note content | `database/notes/{id}.md` | `notes` table, `kind = 'note'` |
+| Task content | `database/tasks/{id}.md` | `notes` table, `kind = 'task'` |
+| Both | `.md` file is canonical content | SQLite holds metadata only |
+
 - SQLite: `{app_data}/vibo.db`
 - Stronghold: `{app_data}/secure-vault.hold`
-- macOS dev path: `~/Library/Application Support/com.viboai.app/`
+- macOS dev path: `~/Library/Application Support/com.viboai.app.dev/`
+- macOS release path: `~/Library/Application Support/com.viboai.app/`
+
+**Decision locked 2026-04-09**: Path rename `vault/` → `database/` is confirmed. Code update pending Lead approval of diff.

@@ -3,6 +3,15 @@ pub mod manager;
 
 use serde::{Deserialize, Serialize};
 
+/// Caller context for audit logging of mutations
+/// Distinguishes between user-triggered and agent-triggered actions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CallerContext {
+    User,
+    Agent { agent_id: String },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KanbanColumn {

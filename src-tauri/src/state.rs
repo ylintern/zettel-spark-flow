@@ -7,7 +7,7 @@ use crate::security::{biometric::BiometricState, SecurityState};
 pub struct AppState {
     db: RwLock<Option<SqlitePool>>,
     pub db_path: PathBuf,
-    pub vault_dir: PathBuf,
+    pub database_dir: PathBuf,
     pub security: SecurityState,
     pub biometric: BiometricState,
 }
@@ -16,14 +16,14 @@ impl AppState {
     pub fn new(
         db: SqlitePool,
         db_path: PathBuf,
-        vault_dir: PathBuf,
+        database_dir: PathBuf,
         security: SecurityState,
         biometric: BiometricState,
     ) -> Self {
         Self {
             db: RwLock::new(Some(db)),
             db_path,
-            vault_dir,
+            database_dir,
             security,
             biometric,
         }

@@ -18,15 +18,15 @@ Make the app fully functional before inference:
 
 | Gate | Status | Evidence |
 |------|--------|----------|
-| Build compiles (dev) | `[x]` | `bun run tauri:dev` — fixed 2026-04-08 after stale cache clear |
+| Build compiles (dev) | `[x]` | `bun run tauri:dev` — 39.87s, 14 dead_code warnings (cosmetic) |
 | White screen regression | `[x]` | `store.tsx` import fix confirmed working |
 | SHA-256 key derivation | `[x]` | `derive_vault_key()` in `security/mod.rs`, confirmed by user |
 | Core App QA (8 checks) | `[x]` | `scripts/qa_lifecycle.py` — 8/8 PASS, 2026-04-08 |
-| Folder bootstrap | `[x]` | PASS — vault/notes and vault/kanban self-heal on launch |
+| Folder bootstrap | `[x]` | PASS — notes and kanban self-heal on launch |
+| Normal unlock regression | `[x]` | PASS — confirmed by Lead 2026-04-09 (lock/unlock/wrong-pass) |
 | Reset routing | `[ ]` | Code done, manual QA not yet run |
-| Normal unlock regression | `[ ]` | Required after key derivation changes |
-| Note + kanban persistence | `[ ]` | End-to-end create/edit/relaunch not confirmed |
-| Private note encrypt UX | `[ ]` | Storage path works; UX contract incomplete |
+| Note + task persistence | `[ ]` | Test artifacts created — persistence script pending |
+| Private note encrypt UX | `[!]` | DEFERRED — moved to Phase 1 |
 | Biometrics (hardware-backed) | `[!]` | Explicitly deferred — placeholder only |
 | DMG packaging | `[!]` | .app bundle works, .dmg fails — explicitly deferred |
 
@@ -52,12 +52,12 @@ Make the app fully functional before inference:
 | # | Test | How |
 |---|------|-----|
 | 1 | Reset routing → onboarding | Settings → Reset → confirm → expect onboarding, not lock screen |
-| 2 | Normal unlock regression | Close app, relaunch, enter correct passphrase → workspace |
-| 3 | Wrong passphrase stays on lock | Enter wrong PIN/passphrase → error, no phase change |
-| 4 | Note persistence after relaunch | Create note → close → relaunch → note still there |
-| 5 | Kanban task persistence | Create task → close → relaunch → task still there |
-| 6 | Private note toggle UX | Toggle encrypt on a note → confirm passphrase required |
-| 7 | Duplicate reset UX | Confirm only one reset entrypoint visible in Settings |
+| 2 | ~~Normal unlock regression~~ | ✅ PASS 2026-04-09 |
+| 3 | ~~Wrong passphrase stays on lock~~ | ✅ PASS 2026-04-09 |
+| 4 | Note persistence after relaunch | Run `python3 scripts/qa_p0_tail.py --dev` after relaunch |
+| 5 | Task persistence after relaunch | Same script — checks "Countertest69" in `database/tasks/` |
+| 6 | ~~Private note toggle UX~~ | 🚫 DEFERRED Phase 1 |
+| 7 | ~~Duplicate reset UX~~ | ✅ RESOLVED — two resets are intentional by design |
 
 ---
 
@@ -82,8 +82,9 @@ Make the app fully functional before inference:
 
 | Data | Owner | Location |
 |------|-------|----------|
-| Note content (markdown) | Vault module (Rust) | `vault/notes/` |
-| Note metadata | DB module (Rust) | SQLite `notes` table |
+| Note content (markdown) | Vault module (Rust) | `database/notes/{id}.md` |
+| Task content (markdown) | Vault module (Rust) | `database/tasks/{id}.md` |
+| Note/task metadata | DB module (Rust) | SQLite `notes` table (`kind='note'` or `kind='task'`) |
 | Kanban columns | DB module (Rust) | SQLite `columns` table |
 | Folders | DB module (Rust) | SQLite `folders` table |
 | Encryption keys, vault state | Security module (Rust) | Stronghold `secure-vault.hold` |

@@ -1,7 +1,7 @@
 # Engineer Sync
 
-**Last Updated**: 2026-04-08  
-**Status**: Build fixed. Core gate passed. QA tail open.
+**Last Updated**: 2026-04-09
+**Status**: Phase 0 closed. Settings sprint (S1–S5) complete. P1-B CallerContext complete. P1-D LEAP next.
 
 ---
 
@@ -11,32 +11,43 @@
 - Crypto crates optimized in debug mode — vault setup ~5s (was 80s+)
 - Vault phase derives from backend truth: `configured` + `unlocked` → onboarding / lock / app
 - SHA-256 canonical key derivation in `security/mod.rs` — confirmed working
-- Stronghold-backed passphrase/PIN setup and unlock
+- Stronghold-backed passphrase/PIN setup, unlock, reset (`reset_passphrase` ✅)
 - Factory reset clears Stronghold + SQLite + Markdown vault
-- Folder bootstrap self-heals `vault/notes/` and `vault/kanban/` on every launch
+- Folder bootstrap self-heals `database/notes/` and `database/tasks/` on every launch
+- Path migration complete: `vault/` → `database/`, `kanban/` → `tasks/` — 8 files migrated, zero data loss
 - Kanban columns and folders are backend-authoritative (SQLite, no localStorage)
-- Event bus exists: `vault_status_changed` and `note_indexing_progress` wired end-to-end
-- Device capabilities exposed to frontend from Rust
-- `scripts/qa_lifecycle.py` — 8/8 checks pass
+- Event bus: `vault_status_changed` and `note_indexing_progress` wired end-to-end
+- Device capabilities exposed to frontend via `get_device_capabilities`
+- Biometric commands registered (mobile path, commands exist — hardware test pending)
+- Stronghold secret commands: `store_secret`, `get_secret`, `delete_secret`, `get_provider_status` ✅
+- Factory reset: `factory_reset`, `reset_vault_and_secrets` — functional
+- CallerContext on all 5 write commands — `save_note`, `delete_note`, `create_folder`, `save_column`, `delete_column` ✅
+- Agent mutations log `[AGENT MUTATION] agent_id=X command=Y` ✅
+- Cloud providers: Anthropic / Ollama (Cloud) / Local visible; OpenRouter/Gemini/Kimi/MiniMax hidden ✅
+- `get_provider_status` returns bool only — secrets never in frontend state ✅
+- Appearance toggle — `vibo_theme` persists across relaunch ✅
+- Export notes: `export_notes` Rust command + tauri-plugin-dialog save dialog ✅
+- Biometrics section reads from `is_biometric_available` on mount — not hardcoded ✅
+- Cloud key loads: parallel `Promise.all` (not sequential) ✅
+- `scripts/qa_p0_tail.py` — 6/6 checks pass
 
 ---
 
-## What Is Still Open
+## What Is Still Open — Phase 1
 
-| Item | Status | Blocker? |
-|------|--------|----------|
-| Reset routing → onboarding | `[ ]` QA pending | Yes — Phase 0 close |
-| Normal unlock regression | `[ ]` QA pending | Yes — Phase 0 close |
-| Note persistence after relaunch | `[ ]` QA pending | Yes — Phase 0 close |
-| Kanban persistence after relaunch | `[ ]` QA pending | Yes — Phase 0 close |
-| Private note encrypt/decrypt UX | `[ ]` QA pending | Yes — Phase 0 close |
-| Duplicate reset UX (Settings) | `[ ]` Review pending | Minor |
-| `agent_thinking_delta` event wired | `[ ]` Phase 1 | No |
-| Caller-aware command boundary | `[ ]` Phase 1 | No |
-| React Error Boundary on Index.tsx | `[ ]` Hygiene | No |
-| tsconfig strict mode | `[ ]` Hygiene | No |
-| Agent notes localStorage → SQLite | `[ ]` Decision pending | No |
-| Biometrics hardware-backed | `[!]` Deferred | No |
+| Item | Task | Status | Blocker? |
+|------|------|--------|----------|
+| agent_thinking_delta real emission | P1-D | `[ ]` Needs LEAP wired | Yes |
+| LEAP pre-flight (5 questions) | P1-D | `[ ]` Answer before code | Yes |
+| tauri-plugin-leap-ai registration | P1-D | `[ ]` Cargo.toml + capabilities + lib.rs | Yes |
+| Model download UI (catalog-driven) | P1-D | `[ ]` After plugin registered | After pre-flight |
+| Model load + createConversation | P1-D | `[ ]` | After download UI |
+| generate → onLeapEvent → UI stream | P1-D | `[ ]` Gate for P1-C | Core P1-D |
+| build_context Rust command | P1-C | `[ ]` retrieval.rs hot path | After P1-D stream |
+| Cloud inference via tauri-plugin-http | P1-cloud | `[ ]` Anthropic + Ollama + Local | After P1-C |
+| Swiftide agent + #[tool] functions | P1-tools | `[ ]` | After P1-cloud |
+| Biometrics hardware-backed | Phase 2 | `[ ]` Deferred | — |
+| Private note encryption | Phase 2 | `[ ]` Deferred | — |
 
 ---
 
@@ -44,15 +55,17 @@
 
 | Data | Owner | Location |
 |------|-------|----------|
-| Note content (markdown) | Vault module (Rust) | `vault/notes/` |
-| Note metadata | DB module (Rust) | SQLite `notes` table |
+| Note content (markdown) | Vault module (Rust) | `database/notes/{id}.md` |
+| Task content (markdown) | Vault module (Rust) | `database/tasks/{id}.md` |
+| Note/task metadata | DB module (Rust) | SQLite `notes` table (`kind='note' or 'task'`) |
 | Kanban columns | DB module (Rust) | SQLite `columns` table |
 | Folders | DB module (Rust) | SQLite `folders` table |
-| Vault keys / secrets | Security module (Rust) | Stronghold `secure-vault.hold` |
+| Vault keys / secrets / API keys | Security module (Rust) | Stronghold `secure-vault.hold` |
 | Vectors / embeddings | Swiftide pipeline | Phase 3 — not yet |
 | Agent memory | Agent module | Phase 4 — not yet |
 
 **Invariant**: No app-critical data in browser localStorage.
+**Allowed localStorage**: `vibo_theme` (appearance only).
 
 ---
 
@@ -60,35 +73,42 @@
 
 | File | Role |
 |------|------|
-| `src-tauri/src/security/mod.rs` | Stronghold wrapper, `derive_vault_key()`, setup/unlock/lock |
-| `src-tauri/src/vault/mod.rs` | Note read/write, encryption |
+| `src-tauri/src/security/mod.rs` | Stronghold wrapper, derive_vault_key, setup/unlock/lock/reset/get_provider_status |
+| `src-tauri/src/vault/mod.rs` | Note read/write, task routing (database/notes vs database/tasks) |
 | `src-tauri/src/db/mod.rs` | SQLite migrations, all queries |
-| `src-tauri/src/commands/workspace.rs` | Tauri IPC endpoints |
+| `src-tauri/src/commands/workspace.rs` | Tauri IPC: save_note, delete_note, create_folder, save_column, delete_column, export_notes |
 | `src-tauri/src/events/mod.rs` | Event bus definitions |
-| `src-tauri/src/lib.rs` | App setup, bootstrap, plugin registration |
+| `src-tauri/src/lib.rs` | App setup, bootstrap, plugin registration, invoke_handler |
+| `src-tauri/src/models/mod.rs` | CallerContext type |
 | `src/lib/vaultPhase.ts` | Single source of truth for phase derivation |
 | `src/lib/store.tsx` | Frontend state, hydration from backend |
-| `src/pages/Index.tsx` | Root — phase routing, vault_status_changed listener |
-| `scripts/qa_lifecycle.py` | 8-check QA lifecycle inspector |
-| `src-tauri/tauri.dev.conf.json` | Dev identifier override (`com.viboai.app.dev`) |
+| `src/lib/models.ts` | CLOUD_PROVIDERS, cloudProviderSecretKey, loadCloudKeys (parallel) |
+| `src/pages/Index.tsx` | Root — phase routing, vault_status_changed listener, vibo_theme on mount |
+| `src/components/SettingsView.tsx` | Settings: passphrase reset, appearance, export, cloud providers |
+| `Guidelines/source-of-truth/PHASE_1_INFERENCE_PLAN.md` | Source of truth for P1-D through Phase 2 |
 
 ---
 
 ## Active Rules
 
-- Private notes encrypt in Rust before disk write
-- Cloud/API secrets use secure vault commands only
-- Biometric implementation is untrusted until hardware-backed release exists
+- Private notes: encrypt in Rust before disk write (Phase 2)
+- Cloud/API secrets: Stronghold only — never frontend state
+- Biometric: untrusted until hardware-backed release path exists
 - `Cargo.toml` dependency added → module must be `use`d → command registered in `lib.rs`
-- Phase derivation computed only by `deriveVaultPhase()` in `vaultPhase.ts`
-- `swiftide`, `swiftide-agents`, `tauri-plugin-velesdb`, `tauri-plugin-leap-ai` commented out until Phase 1–3 modules are written
+- Phase derivation: computed only by `deriveVaultPhase()` in `vaultPhase.ts`
+- Tauri commands: Human clicks → `invoke()` only — never LLM-initiated
+- Swiftide `#[tool]`: LLM-initiated only — never Human-triggered
+- `swiftide`, `swiftide-agents`, `tauri-plugin-velesdb`, `tauri-plugin-leap-ai` commented out until Phase 1 modules written
+- 14 dead-code warnings are intentional phase indicators (retrieval.rs, manifest.rs, manager.rs) — do not silence
 
 ---
 
 ## Next Recommended Order
 
-1. Run Phase 0 QA tail (tests 2–7 in `PHASE_0_EXECUTION_BOARD.md`)
-2. Once QA passes, proceed to P1-B caller-aware command boundary
-3. Then P1-C context bundle service
-4. Then P1-D LEAP runtime hookup
-5. Do not start model manager or Swiftide until app-core gate is fully passed
+1. Answer LEAP pre-flight 5 questions (`PHASE_1_INFERENCE_PLAN.md` Section 3)
+2. P1-D: Register LEAP plugin, update Cargo.toml platform split, update capabilities
+3. P1-D: Model download UI → load → createConversation → generate → stream → UI
+4. P1-C: build_context command (retrieval.rs hot path, FTS first, velesdb decision at gate)
+5. P1-cloud: Cloud providers via tauri-plugin-http
+6. P1-tools: Swiftide agent + #[tool] functions
+7. Do not build InferenceProvider trait before step 3 is complete

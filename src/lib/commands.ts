@@ -58,23 +58,23 @@ export async function loadWorkspaceSnapshot(): Promise<WorkspaceSnapshot> {
 }
 
 export async function saveWorkspaceNote(note: Note): Promise<void> {
-  return tauriInvoke<void>("save_note", { note });
+  return tauriInvoke<void>("save_note", { note, caller: { type: "user" } });
 }
 
 export async function deleteWorkspaceNote(id: string): Promise<void> {
-  return tauriInvoke<void>("delete_note", { id });
+  return tauriInvoke<void>("delete_note", { id, caller: { type: "user" } });
 }
 
 export async function createWorkspaceFolder(name: string): Promise<void> {
-  return tauriInvoke<void>("create_folder", { name });
+  return tauriInvoke<void>("create_folder", { name, caller: { type: "user" } });
 }
 
 export async function saveWorkspaceColumn(column: KanbanColumn): Promise<void> {
-  return tauriInvoke<void>("save_column", { column });
+  return tauriInvoke<void>("save_column", { column, caller: { type: "user" } });
 }
 
 export async function deleteWorkspaceColumn(id: string): Promise<void> {
-  return tauriInvoke<void>("delete_column", { id });
+  return tauriInvoke<void>("delete_column", { id, caller: { type: "user" } });
 }
 
 export async function setupSecureVault(passphrase: string): Promise<void> {
@@ -108,6 +108,14 @@ export async function getSecretFromVault(key: string): Promise<string | null> {
 
 export async function deleteSecretFromVault(key: string): Promise<void> {
   return tauriInvoke<void>("delete_secret", { key });
+}
+
+export async function getProviderStatus(provider: string): Promise<boolean> {
+  return tauriInvoke<boolean>("get_provider_status", { provider });
+}
+
+export async function exportNotes(): Promise<string> {
+  return tauriInvoke<string>("export_notes", { caller: { type: "user" } });
 }
 
 export async function factoryReset(): Promise<void> {

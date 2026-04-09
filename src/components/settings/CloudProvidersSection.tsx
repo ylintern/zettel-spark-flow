@@ -213,6 +213,8 @@ export function CloudProvidersSection({
     setModels(getSelectedModels());
   };
 
+  const visibleProviders = CLOUD_PROVIDERS.filter((p) => !p.hidden);
+
   return (
     <div className="card-3d rounded-2xl p-4">
       <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1 flex items-center gap-1.5">
@@ -220,11 +222,11 @@ export function CloudProvidersSection({
         Cloud Providers
       </h2>
       <p className="text-[10px] text-muted-foreground mb-3">
-        Connect cloud providers for deep reasoning. Actual OAuth will be wired via Rust backend.
+        Connect cloud providers for deep reasoning. Keys are stored in the secure vault.
       </p>
 
       <div className="space-y-2">
-        {CLOUD_PROVIDERS.map((provider) => (
+        {visibleProviders.map((provider) => (
           <ProviderCard
             key={provider.id}
             provider={provider}

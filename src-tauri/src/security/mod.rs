@@ -176,6 +176,36 @@ impl SecurityState {
         Ok(())
     }
 
+    /// Change the vault passphrase.
+    /// Verifies the current passphrase first. Fails with InvalidPassphrase if wrong.
+    /// Deletes the old snapshot and re-initializes with the new passphrase.
+    /// Safe in Phase 1: no encrypted note content exists yet (Phase 2 concern).
+    pub fn reset_passphrase(&self, current: &str, new_passphrase: &str) -> Result<(), SecurityError> {
+        // Verify current passphrase by attempting to open the vault
+        if !self.is_configured() {
+            return Err(SecurityError::VaultNotConfigured);
+        }
+        let current_key = derive_vault_key(current);
+        Stronghold::new(&self.snapshot_path, current_key).map_err(|_| SecurityError::InvalidPassphrase)?;
+
+        // Close current session
+        {
+            let mut session = self.session.lock().unwrap();
+            if let Some(stronghold) = session.take() {
+                let _ = stronghold.save();
+            }
+        }
+
+        // Delete old snapshot
+        if self.snapshot_path.exists() {
+            std::fs::remove_file(&self.snapshot_path)
+                .map_err(|err| SecurityError::Stronghold(format!("Failed to delete old snapshot: {}", err)))?;
+        }
+
+        // Re-initialize with new passphrase (generates fresh note key)
+        self.setup(new_passphrase)
+    }
+
     /// Completely destroy the vault and all its contents
     /// This is irreversible and used when user forgot passphrase
     pub fn reset_vault(&self) -> Result<(), SecurityError> {
@@ -409,7 +439,7 @@ pub async fn factory_reset(app: AppHandle, state: State<'_, AppState>) -> Result
         db.close().await;
     }
 
-    vault::reset_vault_dir(&state.vault_dir).map_err(|err| err.to_string())?;
+    vault::reset_vault_dir(&state.database_dir).map_err(|err| err.to_string())?;
     db::delete_database_files(&state.db_path).map_err(|err| err.to_string())?;
     state
         .security
@@ -422,6 +452,45 @@ pub async fn factory_reset(app: AppHandle, state: State<'_, AppState>) -> Result
     state.replace_db(new_db);
 
     emit_vault_status(&app, &state.security, "factory-reset")
+}
+
+#[tauri::command]
+pub async fn reset_passphrase(
+    current: String,
+    new_passphrase: String,
+    state: State<'_, AppState>,
+    caller: crate::models::CallerContext,
+) -> Result<(), String> {
+    if let crate::models::CallerContext::Agent { ref agent_id } = caller {
+        log::info!(
+            "[AGENT MUTATION] agent_id={} command=reset_passphrase",
+            agent_id
+        );
+    }
+    state
+        .security
+        .reset_passphrase(&current, &new_passphrase)
+        .map_err(|err| err.to_string())
+}
+
+/// Returns true if a secret for the given provider is stored and non-empty.
+/// Maps provider id → canonical storage key. Never returns the actual value.
+#[tauri::command]
+pub async fn get_provider_status(
+    provider: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let key = match provider.as_str() {
+        "anthropic" => "anthropic_api_key",
+        "ollama"    => "ollama_endpoint",
+        "local"     => "local_endpoint",
+        _           => return Ok(false),
+    };
+    match state.security.get_secret(key) {
+        Ok(Some(v)) => Ok(!v.is_empty()),
+        Ok(None) => Ok(false),
+        Err(_) => Ok(false),
+    }
 }
 
 /// Command: Safely reset the vault and all stored secrets

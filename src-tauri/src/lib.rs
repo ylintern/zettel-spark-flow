@@ -17,15 +17,57 @@ use crate::{
     state::AppState,
 };
 
+/// One-time silent migration: vault/ → database/
+/// Safe to call on every launch. Does nothing if already migrated or no vault/ present.
+fn migrate_vault_to_database(app_data: &Path) {
+    let old_root = app_data.join("vault");
+    let new_root = app_data.join("database");
+
+    if !old_root.exists() || new_root.exists() {
+        return;
+    }
+
+    if let Err(e) = fs::create_dir_all(&new_root) {
+        eprintln!("[vibo] migration: failed to create database/: {e}");
+        return;
+    }
+
+    // vault/notes → database/notes
+    let old_notes = old_root.join("notes");
+    let new_notes = new_root.join("notes");
+    if old_notes.exists() {
+        if let Err(e) = fs::rename(&old_notes, &new_notes) {
+            eprintln!("[vibo] migration: failed to move notes: {e}");
+            return;
+        }
+        eprintln!("[vibo] migration: vault/notes → database/notes complete");
+    }
+
+    // vault/kanban → database/tasks
+    let old_kanban = old_root.join("kanban");
+    let new_tasks = new_root.join("tasks");
+    if old_kanban.exists() {
+        if let Err(e) = fs::rename(&old_kanban, &new_tasks) {
+            eprintln!("[vibo] migration: failed to move kanban→tasks: {e}");
+            return;
+        }
+        eprintln!("[vibo] migration: vault/kanban → database/tasks complete");
+    }
+
+    // Remove now-empty vault/ dir (best effort — ignore if not empty)
+    let _ = fs::remove_dir(&old_root);
+    eprintln!("[vibo] migration: vault/ → database/ complete");
+}
+
 /// Bootstrap app directory structure on every launch
-/// Creates: base/, base/notes/, base/kanban/
+/// Creates: base/, base/notes/, base/tasks/
 /// Self-healing: missing directories are created silently
 /// Error handling: logs failure but does not panic
 fn bootstrap_app_directories(base: &Path) -> Result<(), String> {
     let dirs = [
         base.to_path_buf(),
         base.join("notes"),
-        base.join("kanban"),
+        base.join("tasks"),
     ];
     for dir in &dirs {
         if !dir.exists() {
@@ -88,12 +130,15 @@ pub fn run() {
                 .path()
                 .app_local_data_dir()
                 .expect("failed to resolve app local data dir");
-            let vault_dir = app_data_dir.join("vault");
+            // One-time migration: vault/ → database/ (silent, idempotent)
+            migrate_vault_to_database(&app_data_dir);
+
+            let database_dir = app_data_dir.join("database");
             let db_path = app_data_dir.join("vibo.db");
             let secure_vault_path = app_data_dir.join("secure-vault.hold");
 
             // Bootstrap app directory structure on every launch
-            if let Err(e) = bootstrap_app_directories(&vault_dir) {
+            if let Err(e) = bootstrap_app_directories(&database_dir) {
                 eprintln!("[vibo] CRITICAL: directory bootstrap failed: {}", e);
             }
 
@@ -103,7 +148,7 @@ pub fn run() {
             app.manage(AppState::new(
                 db,
                 db_path,
-                vault_dir,
+                database_dir,
                 SecurityState::new(secure_vault_path),
                 BiometricState::new(),
             ));
@@ -125,6 +170,7 @@ pub fn run() {
             commands::workspace::create_folder,
             commands::workspace::save_column,
             commands::workspace::delete_column,
+            commands::workspace::export_notes,
             security::setup_secure_vault,
             security::unlock_vault,
             security::lock_vault,
@@ -133,8 +179,10 @@ pub fn run() {
             security::store_secret,
             security::get_secret,
             security::delete_secret,
+            security::get_provider_status,
             security::factory_reset,
             security::reset_vault_and_secrets,
+            security::reset_passphrase,
             security::biometric::is_biometric_available,
             security::biometric::get_device_capabilities,
             security::biometric::is_biometric_enabled,

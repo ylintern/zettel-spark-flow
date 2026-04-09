@@ -36,7 +36,8 @@ function WorkspaceContent() {
   const [activeSessionId, setActiveSessionId] = useState(sessions[0].id);
 
   useEffect(() => {
-    document.documentElement.classList.remove("dark");
+    const theme = localStorage.getItem("vibo_theme") ?? "dark";
+    document.documentElement.classList.toggle("dark", theme === "dark");
   }, []);
 
   // Auto-minimize chat when navigating

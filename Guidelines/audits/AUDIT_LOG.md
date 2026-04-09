@@ -152,6 +152,92 @@ Single chronological record of all decisions, findings, and QA results.
 
 ---
 
+## 2026-04-08 — Pre-Task Audit & QA Tail Prep
+
+**Scope**: Full code read-through answering all briefing pre-task questions. No code changed.
+
+**Confirmed facts from code (not memory):**
+- `deriveVaultPhase()` → `src/lib/vaultPhase.ts:25` — 3 values: onboarding / lock / app
+- `Stronghold::new` called at `security/mod.rs:114` on EVERY `unlock()` call (per lock/unlock cycle, not per launch). Session cached in `SecurityState.session` while unlocked.
+- Note path: `vault/notes/{id}.md` (confirmed in `vault/mod.rs:29`). The `vault/kanban/` dir exists but is empty — nothing writes there.
+- Tasks are stored as `vault/notes/{id}.md` (same as notes, `kind='task'` in SQL) — diverges from whitepaper which says "Tasks: SQLite only". **Decision pending.**
+- `delegated_to` column: does NOT exist in notes schema.
+- Factory reset: no passphrase required (intentional — "forgot passphrase" path). No auth guard in `security/mod.rs:405`.
+
+**Terminal problem flags found:**
+- `services/retrieval.rs` tests 2 & 3 have broken struct construction (`user_prompt: None` on `String` field). Blocks `cargo test`. Deferred to P1-C implementation — does not affect `bun run test` (TypeScript only) or app build.
+- `SettingsView.tsx:50` has dead `resetEncryption` button (shows alert "not implemented") — always visible after onboarding. This is the "duplicate reset UX" open QA item.
+- `clearAll()` in SettingsView removes only legacy localStorage keys — dead code, no real data affected.
+
+**Stale memory corrected:**
+- `project_phase0.md`: T-3 (rename vault/ → database/notes/) was marked PENDING but code already uses `vault/notes/` and Core App Gate passed. Memory updated to reflect current reality.
+- `project_storage.md`: had wrong target paths (`database/notes/`). Updated to `vault/notes/` (confirmed code state).
+
+**Artifacts created:**
+- `userrequest.md` — manual QA checklist for human/developer (P0-T1 through T7)
+- `scripts/qa_p0_tail.py` — Python persistence verification script (run after P0-T4)
+
+**Open decisions (awaiting Lead answer before coding):**
+- Q1: Remove dead "Reset Encryption & PIN" button? (Yes/No)
+- Q2: Task file location — keep `vault/notes/`, SQLite-only, or separate `vault/kanban/`?
+
+---
+
+## 2026-04-09 — P0 QA Tail Results + Path Correction
+
+QA results:
+- P0-T2: PASS — lock/unlock/wrong-pass all confirmed working by Lead
+- P0-T5: DEFERRED — private note toggle moved to Phase 1
+- P0-T4: test artifacts created ("Testinfolder69" note, "Countertest69" task) — persistence pending script verification
+
+Decisions:
+- Two reset sections are INTENTIONAL — pass/PIN/biometric reset (data survives) + full database reset (wipe) are separate features, both kept
+- Task file path: `database/tasks/{id}.md` — confirmed by Lead
+- Private note toggle: deferred to Phase 1
+- Duplicate reset UX flag removed — both resets serve different purposes by design
+
+PATH CORRECTION applied across all docs:
+- `vault/notes/` → `database/notes/`
+- `vault/kanban/` → `database/tasks/`
+- Code still uses `vault/` — rename diff pending Lead approval before applying
+
+Code audit results (Step 2 — awaiting approval):
+- `lib.rs:91` — `join("vault")` → `join("database")`
+- `lib.rs:28` — `base.join("kanban")` → `base.join("tasks")`
+- `vault/mod.rs:15` — `vault_dir.join("kanban")` → `vault_dir.join("tasks")`
+- `db/mod.rs:364` — test-only: `root.join("vault")` → `root.join("database")`
+- `scripts/qa_p0_tail.py` — path dict uses `vault/` → update to `database/`
+- `AppState.vault_dir` field rename → `database_dir` (per Step 6 spec)
+
+Directory check (Step 3):
+- `{app_data}/vault/` EXISTS with `notes/` (7 .md files) and `kanban/` (empty)
+- `database/` does NOT exist — rename is a code change, not yet applied
+- SQLite `vibo.db` exists (40960 bytes)
+- Test artifacts "Testinfolder69"/"Countertest69" NOT yet in SQLite — app must be relaunched and artifacts confirmed present before running qa script
+
+---
+
+## 2026-04-09 — P1-B CallerContext Complete
+
+**P1-B: CallerContext applied to all 5 write commands.**
+
+- `CallerContext` enum defined in `models/mod.rs` — `User` / `Agent { agent_id }` with serde tag serialization.
+- Applied to: `save_note`, `delete_note`, `create_folder`, `save_column`, `delete_column`.
+- Agent mutations log `[AGENT MUTATION] agent_id=X command=Y target_id=Z` via `log::info!`.
+- All TypeScript write callers in `src/lib/commands.ts` pass `caller: { type: "user" }`.
+- `cargo check`: 0 errors, 14 warnings (intentional Phase 1-C/D scaffolding — leave as-is).
+- `bun run build`: clean, 1755 modules, no errors.
+
+**Dead code decision confirmed:** 14 warnings are phase indicators. Do not silence. Will clear when Phase 1-C (context.rs/retrieval.rs) and Phase 1-D (manifest.rs/manager.rs) activate.
+
+**Interaction Architecture table** added to `ARCHITECTURE_RULES.md` as permanent reference.
+**Device-Aware Auth** rules added to `ARCHITECTURE_RULES.md`.
+**ENGINEER_SYNC.md** updated to Phase 1 task list.
+
+**Next**: S1 — `reset_passphrase` command.
+
+---
+
 ## Open QA — Required Before Phase 0 Full Sign-Off
 
 | # | Test | Status |

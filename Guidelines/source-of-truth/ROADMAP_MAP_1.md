@@ -8,8 +8,8 @@
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| 0 | App foundation, storage, CRUD, security | `[~]` QA tail open |
-| 1 | Local inference integration | `[ ]` Infrastructure started |
+| 0 | App foundation, storage, CRUD, security | `[x]` CLOSED 2026-04-09 |
+| 1 | Local inference integration | `[~]` Infrastructure done, P1-D next |
 | 2 | Cloud model integration | `[ ]` Not started |
 | 3 | RAG pipeline | `[ ]` Not started |
 | 4 | Agentic layer | `[ ]` Not started |

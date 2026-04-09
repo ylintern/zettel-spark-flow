@@ -361,7 +361,7 @@ mod tests {
     fn cold_start_persists_markdown_and_sqlite_metadata() {
         tauri::async_runtime::block_on(async {
             let root = std::env::temp_dir().join(format!("vibo-cold-start-{}", Uuid::new_v4()));
-            let vault_dir = root.join("vault");
+            let database_dir = root.join("database");
             let db_path = root.join("vibo.db");
             let secure_vault_path = root.join("secure-vault.hold");
 
@@ -384,11 +384,11 @@ mod tests {
                 is_encrypted: Some(false),
             };
 
-            save_note(&pool, &vault_dir, &note, &security)
+            save_note(&pool, &database_dir, &note, &security)
                 .await
                 .expect("failed to save note");
 
-            let markdown_path = vault_dir.join(vault::note_relative_path(&note.id));
+            let markdown_path = database_dir.join(vault::note_relative_path(&note.id));
             let markdown = fs::read_to_string(&markdown_path).expect("failed to read markdown");
             assert!(markdown.contains("title: \"Cold Start Note\""));
             assert!(markdown.contains("Persistence must survive app restart."));
@@ -396,7 +396,7 @@ mod tests {
             pool.close().await;
 
             let reopened_pool = init_pool(&db_path).await.expect("failed to reopen db");
-            let snapshot = load_workspace_snapshot(&reopened_pool, &vault_dir, &security, None)
+            let snapshot = load_workspace_snapshot(&reopened_pool, &database_dir, &security, None)
                 .await
                 .expect("failed to load snapshot after restart");
 

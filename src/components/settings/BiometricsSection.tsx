@@ -35,9 +35,11 @@ export function BiometricsSection() {
   useEffect(() => {
     const checkBiometricSupport = async () => {
       try {
-        const available = await invoke<boolean>('is_biometric_available');
-        const enabled = await invoke<boolean>('is_biometric_enabled');
-        
+        const [available, enabled] = await Promise.all([
+          invoke<boolean>('is_biometric_available'),
+          invoke<boolean>('is_biometric_enabled'),
+        ]);
+
         setStatus({
           available,
           enabled,
