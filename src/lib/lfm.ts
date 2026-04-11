@@ -3,6 +3,7 @@
  * Routes to local LFM (LEAP) or cloud providers based on active config.
  */
 
+import { onCloudStreamEvent, streamCloudMessage } from "@/lib/commands";
 import {
   getActiveProvider,
   getActiveLocalModel,
@@ -11,6 +12,7 @@ import {
   loadCloudKeys,
   CLOUD_PROVIDERS,
   getDownloadedModels,
+  getSelectedModels,
   type ActiveProvider,
 } from "@/lib/models";
 
@@ -30,7 +32,7 @@ export function isLfmConfigured(): boolean {
     return !!getLfmEndpoint() && getDownloadedModels().length > 0;
   }
   const keys = getCloudKeys();
-  return !!(keys[provider]);
+  return !!keys[provider];
 }
 
 export function getActiveProviderLabel(): string {
@@ -40,45 +42,11 @@ export function getActiveProviderLabel(): string {
   return found?.name || provider;
 }
 
-function getEndpointAndHeaders(provider: ActiveProvider): { url: string; headers: Record<string, string>; model?: string } {
-  if (provider === "local") {
-    const endpoint = getLfmEndpoint();
-    return {
-      url: `${endpoint.replace(/\/+$/, "")}/v1/chat/completions`,
-      headers: { "Content-Type": "application/json" },
-      model: getActiveLocalModel(),
-    };
-  }
-
-  const keys = getCloudKeys();
-  const providerConfig = CLOUD_PROVIDERS.find(p => p.id === provider);
-
-  if (provider === "ollama") {
-    const host = keys.ollama || "http://localhost:11434";
-    return {
-      url: `${host.replace(/\/+$/, "")}/v1/chat/completions`,
-      headers: { "Content-Type": "application/json" },
-    };
-  }
-
-  if (provider === "anthropic") {
-    return {
-      url: `${providerConfig?.baseUrl}/messages`,
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": keys.anthropic || "",
-        "anthropic-version": "2023-06-01",
-      },
-    };
-  }
-
-  // OpenRouter, Kimi, MiniMax — all OpenAI-compatible
+function getLocalEndpointAndModel(): { url: string; model?: string } {
+  const endpoint = getLfmEndpoint();
   return {
-    url: `${providerConfig?.baseUrl}/chat/completions`,
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${keys[provider] || ""}`,
-    },
+    url: `${endpoint.replace(/\/+$/, "")}/v1/chat/completions`,
+    model: getActiveLocalModel(),
   };
 }
 
@@ -106,79 +74,78 @@ export async function streamLfmChat({
     return;
   }
 
-  const { url, headers, model } = getEndpointAndHeaders(provider);
-
   try {
-    const body: any = {
-      messages: [SYSTEM_PROMPT, ...messages],
-      stream: true,
-      max_tokens: 1024,
-    };
-
-    if (model) body.model = model;
-
-    // Anthropic uses a different body format
-    if (provider === "anthropic") {
-      body.model = "claude-sonnet-4-20250514";
-      body.system = SYSTEM_PROMPT.content;
-      body.messages = messages.map(m => ({ role: m.role, content: m.content }));
-    }
-
-    const resp = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal,
-    });
-
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      onError(`${getActiveProviderLabel()} error (${resp.status}): ${text || "Connection failed"}`);
-      return;
-    }
-
-    if (!resp.body) {
-      onError("No response body");
-      return;
-    }
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let newlineIdx: number;
-      while ((newlineIdx = buffer.indexOf("\n")) !== -1) {
-        let line = buffer.slice(0, newlineIdx);
-        buffer = buffer.slice(newlineIdx + 1);
-
-        if (line.endsWith("\r")) line = line.slice(0, -1);
-        if (line.startsWith(":") || line.trim() === "") continue;
-        if (!line.startsWith("data: ")) continue;
-
-        const jsonStr = line.slice(6).trim();
-        if (jsonStr === "[DONE]") break;
-
-        try {
-          const parsed = JSON.parse(jsonStr);
-          // Handle both OpenAI and Anthropic streaming formats
-          const content =
-            parsed.choices?.[0]?.delta?.content ||
-            parsed.delta?.text ||
-            "";
-          if (content) onDelta(content);
-        } catch {
-          buffer = line + "\n" + buffer;
-          break;
+    if (provider === "local") {
+      const { url, model } = getLocalEndpointAndModel();
+      const body: any = {
+        messages: [SYSTEM_PROMPT, ...messages],
+        stream: true,
+        max_tokens: 1024,
+      };
+      if (model) body.model = model;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal,
+      });
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        onError(`${getActiveProviderLabel()} error (${resp.status}): ${text || "Connection failed"}`);
+        return;
+      }
+      if (!resp.body) {
+        onError("No response body");
+        return;
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIdx: number;
+        while ((newlineIdx = buffer.indexOf("\n")) !== -1) {
+          let line = buffer.slice(0, newlineIdx);
+          buffer = buffer.slice(newlineIdx + 1);
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (line.startsWith(":") || line.trim() === "" || !line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") break;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content || "";
+            if (content) onDelta(content);
+          } catch {
+            buffer = line + "\n" + buffer;
+            break;
+          }
         }
       }
+      onDone();
+      return;
     }
 
-    onDone();
+    const selectedModel = getSelectedModels()[provider] || null;
+    const requestId = await streamCloudMessage(provider, selectedModel, [SYSTEM_PROMPT, ...messages]);
+    let unlistenFn: (() => Promise<void>) | null = null;
+    unlistenFn = await onCloudStreamEvent((event) => {
+      if (event.requestId !== requestId) return;
+      if (event.delta) onDelta(event.delta);
+      if (event.error) {
+        void unlistenFn?.();
+        onError(event.error);
+      }
+      if (event.done) {
+        void unlistenFn?.();
+        onDone();
+      }
+    });
+    signal?.addEventListener("abort", () => {
+      void unlistenFn?.();
+      onDone();
+    });
   } catch (err: any) {
     if (err.name === "AbortError") {
       onDone();

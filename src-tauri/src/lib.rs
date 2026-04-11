@@ -2,8 +2,9 @@ mod commands;
 mod db;
 mod events;
 mod models;
-mod services;
+mod providers;
 mod security;
+mod services;
 mod state;
 mod vault;
 
@@ -64,15 +65,10 @@ fn migrate_vault_to_database(app_data: &Path) {
 /// Self-healing: missing directories are created silently
 /// Error handling: logs failure but does not panic
 fn bootstrap_app_directories(base: &Path) -> Result<(), String> {
-    let dirs = [
-        base.to_path_buf(),
-        base.join("notes"),
-        base.join("tasks"),
-    ];
+    let dirs = [base.to_path_buf(), base.join("notes"), base.join("tasks")];
     for dir in &dirs {
         if !dir.exists() {
-            fs::create_dir_all(dir)
-                .map_err(|e| format!("bootstrap failed {:?}: {}", dir, e))?;
+            fs::create_dir_all(dir).map_err(|e| format!("bootstrap failed {:?}: {}", dir, e))?;
             eprintln!("[vibo] created missing directory: {:?}", dir);
         }
     }
@@ -106,17 +102,21 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_stronghold::Builder::new(|password| {
-            derive_vault_key(&password)
-        }).build())
+        .plugin(
+            tauri_plugin_stronghold::Builder::new(|password| derive_vault_key(&password)).build(),
+        )
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|app| {
             // One-time migration: move data from old bundle path to new bundle path
-            let old_data_dir = app.path().app_local_data_dir()
+            let old_data_dir = app
+                .path()
+                .app_local_data_dir()
                 .map(|p| p.parent().unwrap_or(&p).join("com.vibo.zettel-spark-flow"))
                 .ok();
-            let new_data_dir = app.path().app_local_data_dir()
+            let new_data_dir = app
+                .path()
+                .app_local_data_dir()
                 .expect("failed to resolve app local data dir");
 
             if let Some(old) = old_data_dir {
@@ -190,6 +190,7 @@ pub fn run() {
             security::biometric::disable_biometric_unlock,
             security::biometric::verify_biometric_and_unlock,
             security::biometric::fallback_passphrase_unlock,
+            providers::stream_cloud_message,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

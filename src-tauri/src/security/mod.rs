@@ -34,7 +34,10 @@ pub fn derive_vault_key(passphrase: &str) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(passphrase.as_bytes());
     let key = hasher.finalize().to_vec();
-    log::info!("derive_vault_key: key derivation complete, output length: {} bytes", key.len());
+    log::info!(
+        "derive_vault_key: key derivation complete, output length: {} bytes",
+        key.len()
+    );
     key
 }
 
@@ -62,37 +65,35 @@ impl SecurityState {
     pub fn setup(&self, passphrase: &str) -> Result<(), SecurityError> {
         // Ensure parent directory exists before creating the stronghold snapshot
         if let Some(parent) = self.snapshot_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|err| SecurityError::Stronghold(format!("Failed to create vault dir: {}", err)))?;
+            std::fs::create_dir_all(parent).map_err(|err| {
+                SecurityError::Stronghold(format!("Failed to create vault dir: {}", err))
+            })?;
         }
 
         log::info!("setup: vault path resolved to: {:?}", self.snapshot_path);
-        
+
         log::info!("setup: deriving canonical vault key");
         let vault_key = derive_vault_key(passphrase);
-        
+
         log::info!("setup: calling Stronghold::new");
-        let stronghold = Stronghold::new(&self.snapshot_path, vault_key)
-            .map_err(|err| {
-                let msg = format!("Stronghold::new failed: {}", err);
-                log::error!("{}", msg);
-                SecurityError::Stronghold(msg)
-            })?;
+        let stronghold = Stronghold::new(&self.snapshot_path, vault_key).map_err(|err| {
+            let msg = format!("Stronghold::new failed: {}", err);
+            log::error!("{}", msg);
+            SecurityError::Stronghold(msg)
+        })?;
 
         log::info!("setup: Stronghold::new succeeded, ensuring client");
         let client = ensure_client(&stronghold)?;
-        
+
         log::info!("setup: client created, ensuring note key");
         ensure_note_key(&stronghold, &client)?;
-        
+
         log::info!("setup: calling stronghold.save()");
-        stronghold
-            .save()
-            .map_err(|err| {
-                let msg = format!("setup: Failed to save stronghold: {}", err);
-                log::error!("{}", msg);
-                SecurityError::Stronghold(msg)
-            })?;
+        stronghold.save().map_err(|err| {
+            let msg = format!("setup: Failed to save stronghold: {}", err);
+            log::error!("{}", msg);
+            SecurityError::Stronghold(msg)
+        })?;
 
         log::info!("setup: vault setup complete, snapshot persisted");
         *self.session.lock().unwrap() = Some(stronghold);
@@ -106,16 +107,15 @@ impl SecurityState {
         }
 
         log::info!("unlock: vault path resolved to: {:?}", self.snapshot_path);
-        
+
         log::info!("unlock: deriving canonical vault key");
         let vault_key = derive_vault_key(passphrase);
-        
+
         log::info!("unlock: calling Stronghold::new");
-        let stronghold = Stronghold::new(&self.snapshot_path, vault_key)
-            .map_err(|err| {
-                log::error!("Failed to unlock vault: {}", err);
-                SecurityError::InvalidPassphrase
-            })?;
+        let stronghold = Stronghold::new(&self.snapshot_path, vault_key).map_err(|err| {
+            log::error!("Failed to unlock vault: {}", err);
+            SecurityError::InvalidPassphrase
+        })?;
         let client = ensure_client(&stronghold)?;
         ensure_note_key(&stronghold, &client)?;
 
@@ -180,13 +180,18 @@ impl SecurityState {
     /// Verifies the current passphrase first. Fails with InvalidPassphrase if wrong.
     /// Deletes the old snapshot and re-initializes with the new passphrase.
     /// Safe in Phase 1: no encrypted note content exists yet (Phase 2 concern).
-    pub fn reset_passphrase(&self, current: &str, new_passphrase: &str) -> Result<(), SecurityError> {
+    pub fn reset_passphrase(
+        &self,
+        current: &str,
+        new_passphrase: &str,
+    ) -> Result<(), SecurityError> {
         // Verify current passphrase by attempting to open the vault
         if !self.is_configured() {
             return Err(SecurityError::VaultNotConfigured);
         }
         let current_key = derive_vault_key(current);
-        Stronghold::new(&self.snapshot_path, current_key).map_err(|_| SecurityError::InvalidPassphrase)?;
+        Stronghold::new(&self.snapshot_path, current_key)
+            .map_err(|_| SecurityError::InvalidPassphrase)?;
 
         // Close current session
         {
@@ -198,8 +203,9 @@ impl SecurityState {
 
         // Delete old snapshot
         if self.snapshot_path.exists() {
-            std::fs::remove_file(&self.snapshot_path)
-                .map_err(|err| SecurityError::Stronghold(format!("Failed to delete old snapshot: {}", err)))?;
+            std::fs::remove_file(&self.snapshot_path).map_err(|err| {
+                SecurityError::Stronghold(format!("Failed to delete old snapshot: {}", err))
+            })?;
         }
 
         // Re-initialize with new passphrase (generates fresh note key)
@@ -482,9 +488,13 @@ pub async fn get_provider_status(
 ) -> Result<bool, String> {
     let key = match provider.as_str() {
         "anthropic" => "anthropic_api_key",
-        "ollama"    => "ollama_endpoint",
-        "local"     => "local_endpoint",
-        _           => return Ok(false),
+        "ollama" => "ollama_endpoint",
+        "local" => "local_endpoint",
+        "openrouter" => "openrouter_api_key",
+        "gemini" => "gemini_api_key",
+        "kimi" => "kimi_api_key",
+        "minimax" => "minimax_api_key",
+        _ => return Ok(false),
     };
     match state.security.get_secret(key) {
         Ok(Some(v)) => Ok(!v.is_empty()),

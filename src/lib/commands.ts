@@ -32,6 +32,18 @@ export interface VaultStatusChangedEvent {
   reason: string;
 }
 
+export interface CloudMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export interface CloudStreamEvent {
+  requestId: string;
+  delta?: string;
+  done: boolean;
+  error?: string;
+}
+
 export interface DeviceCapabilities {
   platform: string;
   isDesktop: boolean;
@@ -114,6 +126,14 @@ export async function getProviderStatus(provider: string): Promise<boolean> {
   return tauriInvoke<boolean>("get_provider_status", { provider });
 }
 
+export async function streamCloudMessage(
+  provider: string,
+  model: string | null,
+  messages: CloudMessage[],
+): Promise<string> {
+  return tauriInvoke<string>("stream_cloud_message", { provider, model, messages });
+}
+
 export async function exportNotes(): Promise<string> {
   return tauriInvoke<string>("export_notes", { caller: { type: "user" } });
 }
@@ -161,4 +181,10 @@ export async function onVaultStatusChanged(
   handler: (payload: VaultStatusChangedEvent) => void,
 ): Promise<UnlistenFn> {
   return subscribeToEvent<VaultStatusChangedEvent>("vault_status_changed", handler);
+}
+
+export async function onCloudStreamEvent(
+  handler: (payload: CloudStreamEvent) => void,
+): Promise<UnlistenFn> {
+  return subscribeToEvent<CloudStreamEvent>("cloud_message_stream", handler);
 }

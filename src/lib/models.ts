@@ -1,6 +1,6 @@
 import {
   deleteSecretFromVault,
-  getSecretFromVault,
+  getProviderStatus,
   storeSecretInVault,
 } from "./commands";
 
@@ -183,14 +183,14 @@ const STORAGE_KEYS = {
   selectedModels: "vibo-selected-models", // per-provider model selection
 } as const;
 
-let cloudKeysCache: Record<CloudProviderType, string> = {
-  ollama: "",
-  openrouter: "",
-  anthropic: "",
-  gemini: "",
-  kimi: "",
-  minimax: "",
-  local: "",
+let cloudStatusCache: Record<CloudProviderType, boolean> = {
+  ollama: false,
+  openrouter: false,
+  anthropic: false,
+  gemini: false,
+  kimi: false,
+  minimax: false,
+  local: false,
 };
 
 export function getActiveLocalModel(): string {
@@ -221,20 +221,20 @@ function cloudSecretKey(provider: CloudProviderType): string {
   return cloudProviderSecretKey(provider);
 }
 
-export function getCloudKeys(): Record<CloudProviderType, string> {
-  return { ...cloudKeysCache };
+export function getCloudKeys(): Record<CloudProviderType, boolean> {
+  return { ...cloudStatusCache };
 }
 
-export async function loadCloudKeys(): Promise<Record<CloudProviderType, string>> {
+export async function loadCloudKeys(): Promise<Record<CloudProviderType, boolean>> {
   const providers = CLOUD_PROVIDERS.map((item) => item.id);
   const values = await Promise.all(
-    providers.map((p) => getSecretFromVault(cloudSecretKey(p)).catch(() => null))
+    providers.map((p) => getProviderStatus(p).catch(() => false))
   );
-  const next = { ...cloudKeysCache };
+  const next = { ...cloudStatusCache };
   providers.forEach((p, i) => {
-    next[p] = values[i] || "";
+    next[p] = values[i] || false;
   });
-  cloudKeysCache = next;
+  cloudStatusCache = next;
   return getCloudKeys();
 }
 
@@ -242,12 +242,12 @@ export async function setCloudKey(provider: CloudProviderType, value: string) {
   const normalized = value.trim();
   if (normalized) {
     await storeSecretInVault(cloudSecretKey(provider), normalized);
-    cloudKeysCache[provider] = normalized;
+    cloudStatusCache[provider] = true;
     return;
   }
 
   await deleteSecretFromVault(cloudSecretKey(provider));
-  cloudKeysCache[provider] = "";
+  cloudStatusCache[provider] = false;
 }
 
 export type ActiveProvider = "local" | CloudProviderType;
