@@ -10,12 +10,9 @@ import { SafeVaultResetSection } from "@/components/settings/SafeVaultResetSecti
 import { invoke } from "@tauri-apps/api/core";
 import { exportNotes as exportNotesCmd, isTauriRuntimeAvailable } from "@/lib/commands";
 
-const TOR_TOGGLE_KEY = "zettel-tor-enabled";
-
 export function SettingsView() {
   const { notes } = useStore();
   const [dark, setDark] = useState(() => (localStorage.getItem("vibo_theme") ?? "dark") === "dark");
-  const [torEnabled, setTorEnabled] = useState(() => localStorage.getItem(TOR_TOGGLE_KEY) === "true");
   const [hasPin, setHasPin] = useState(false);
 
   // Pass/PIN reset form state
@@ -36,9 +33,6 @@ export function SettingsView() {
     localStorage.setItem("vibo_theme", dark ? "dark" : "light");
   }, [dark]);
 
-  useEffect(() => {
-    localStorage.setItem(TOR_TOGGLE_KEY, String(torEnabled));
-  }, [torEnabled]);
 
   const handleResetPassphrase = async () => {
     setResetError(null);
@@ -221,10 +215,7 @@ export function SettingsView() {
         <LocalModelsSection />
 
         {/* Cloud Providers */}
-        <CloudProvidersSection
-          torEnabled={torEnabled}
-          onTorToggle={() => setTorEnabled(!torEnabled)}
-        />
+        <CloudProvidersSection />
 
         {/* Data */}
         <div className="card-3d rounded-2xl p-4">

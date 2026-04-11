@@ -168,13 +168,7 @@ function ProviderCard({
   );
 }
 
-export function CloudProvidersSection({
-  torEnabled,
-  onTorToggle,
-}: {
-  torEnabled: boolean;
-  onTorToggle: () => void;
-}) {
+export function CloudProvidersSection() {
   const [keys, setKeys] = useState(getCloudKeys);
   const [activeProvider, setActive] = useState(getActiveProvider);
   const [selectedModels, setModels] = useState(getSelectedModels);
@@ -241,23 +235,25 @@ export function CloudProvidersSection({
         ))}
       </div>
 
-      {/* Tor Toggle */}
+      {/* Tor Routing (Planned) */}
       <div className="mt-3 pt-3 border-t border-border">
-        <button
-          onClick={onTorToggle}
-          className="w-full flex items-center justify-between py-1.5 text-sm text-foreground"
+        <div
+          role="note"
+          aria-label="Tor routing available in a future update"
+          title="Tor routing available in a future update"
+          className="w-full flex items-center justify-between py-1.5 text-sm text-foreground/70 cursor-not-allowed"
         >
           <span className="flex items-center gap-2">
-            <Globe className="h-4 w-4" />
+            <Globe className="h-4 w-4 text-muted-foreground" />
             <div className="text-left">
               <div className="text-xs font-medium">Tor Routing</div>
-              <div className="text-[9px] text-muted-foreground">Route cloud API calls through Tor network</div>
+              <div className="text-[9px] text-muted-foreground">Tor routing available in a future update</div>
             </div>
           </span>
-          <div className={`w-9 h-5 rounded-full transition-colors ${torEnabled ? "bg-primary/60" : "bg-muted"} relative`}>
-            <div className={`absolute top-0.5 h-4 w-4 rounded-full transition-transform ${torEnabled ? "bg-primary left-[18px]" : "bg-foreground left-0.5"}`} />
+          <div className="w-9 h-5 rounded-full bg-muted/70 relative opacity-80">
+            <div className="absolute top-0.5 h-4 w-4 rounded-full bg-muted-foreground/40 left-0.5" />
           </div>
-        </button>
+        </div>
       </div>
     </div>
   );
