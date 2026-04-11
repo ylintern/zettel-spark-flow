@@ -131,9 +131,19 @@ Gate: token stream visible in UI before proceeding to P1-C.
 - Every write command carries CallerContext
 - Events flow Rust → UI only
 - No InferenceProvider trait until P1-D token stream works end-to-end
-- No Tor until clear-net cloud providers are stable
+- No Tor until Block 1 is complete and clear-net cloud providers are stable.
 - No external MCP until internal #[tool] is stable
 - Max 3 tool schemas per LLM turn — Rust selects deterministically
+
+
+
+## Deferred Placement Lock — Tor
+
+- **Phase placement**: Tor work is deferred from active Phase 1 delivery and cannot start before **Block 1 (Event Bus) is complete** and **clear-net cloud providers are stable**.
+- **Initial implementation scope**: desktop-only (macOS/Windows/Linux).
+- **Bootstrap mode**: lazy bootstrap only, triggered by explicit Tor-routed provider action.
+- **Fallback policy**: strict **no-silent-clearnet fallback**; Tor failure must return explicit error state and stop request flow.
+- **Anti-drift rule**: no Tor tasks may be moved earlier in the board order or inserted into pre-gate blocks.
 
 ---
 
