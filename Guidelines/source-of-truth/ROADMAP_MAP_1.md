@@ -61,3 +61,4 @@ Canonical source: `/VIBO_ROADMAP (1).md`
 - Biometric hardware-backed unlock — deferred until secure enclave/keychain path exists
 - DMG packaging — `.app` works, `.dmg` fails, explicitly deferred
 - Swiftide / LEAP / VelesDB — Phase 1–3, commented out of `Cargo.toml`
+- Tor networking path — deferred until Phase 1 Block 1 is complete and clear-net cloud providers are stable; initial scope desktop-only with lazy bootstrap and no-silent-clearnet fallback

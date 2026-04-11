@@ -10,3 +10,4 @@
 - [project_killed_decisions.md](project_killed_decisions.md) — Killed: sqlite-vec, Matryoshka truncation, specialist 3rd model, local MCP server
 - [project_open_items.md](project_open_items.md) — Must-verify before build: LeapBridge pattern, 350M catalog, velesdb iOS compile
 - [project_phase0.md](project_phase0.md) — Phase 0 current tasks: build fix, password persistence, data paths, notes/tasks CRUD
+- [project_cto_decisions_cloud.md](Guidelines/source-of-truth/project_cto_decisions_cloud.md) — Final cloud/Tor decisions: Stronghold canonical, .env permanently rejected, Tor deferred + constrained scope
