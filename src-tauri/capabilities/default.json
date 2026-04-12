@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "enables the default permissions",
+  "description": "Default cross-platform capability set (desktop + mobile-safe) with explicit Leap AI permissions for review.",
   "windows": [
     "main"
   ],
@@ -10,6 +10,18 @@
     "sql:default",
     "fs:default",
     "stronghold:default",
-    "clipboard-manager:default"
+    "clipboard-manager:default",
+    "leap-ai:allow-runtime-info",
+    "leap-ai:allow-download-model",
+    "leap-ai:allow-load-model",
+    "leap-ai:allow-load-cached-model",
+    "leap-ai:allow-list-cached-models",
+    "leap-ai:allow-remove-cached-model",
+    "leap-ai:allow-unload-model",
+    "leap-ai:allow-create-conversation",
+    "leap-ai:allow-create-conversation-from-history",
+    "leap-ai:allow-generate",
+    "leap-ai:allow-stop-generation",
+    "leap-ai:allow-export-conversation"
   ]
 }
