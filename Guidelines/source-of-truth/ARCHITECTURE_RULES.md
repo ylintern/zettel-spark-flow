@@ -1,4 +1,4 @@
-# Architecture Rules
+# Architecture Rules Rsearch/draft
 
 ## Permanent Rules
 - 2 flows:
@@ -9,12 +9,12 @@
   - iOS
   - Android
 - no sidecars
-- ping-pong flow only:
+- adequated flow only:
   - UI
   - Tauri commands
   - Rust services
   - tools / inference
-- background or agent work must be able to push state back to UI through an explicit event bus
+- background or agent work must be able to push state back to UI through an explicit event bus? tauri leap ai plugin has api or commands that cover this?
 
 ## Rust Structure Rule
 - create folders under `src-tauri/src/` by real concern
@@ -29,7 +29,7 @@
 - app memory and agent memory must not be tangled casually
 - Phase 0 builds durable app memory first:
   - markdown notes
-  - SQL metadata
+  - SQL metadata /velesdb ?
   - secure secrets
 - private note plaintext must not be the canonical disk form
 - browser crypto must not be the long-term owner of private notes or provider keys
