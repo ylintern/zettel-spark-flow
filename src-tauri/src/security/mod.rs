@@ -445,7 +445,7 @@ pub async fn factory_reset(app: AppHandle, state: State<'_, AppState>) -> Result
         db.close().await;
     }
 
-    vault::reset_vault_dir(&state.database_dir).map_err(|err| err.to_string())?;
+    vault::reset_vault_dir(&state.myspace_dir).map_err(|err| err.to_string())?;
     db::delete_database_files(&state.db_path).map_err(|err| err.to_string())?;
     state
         .security

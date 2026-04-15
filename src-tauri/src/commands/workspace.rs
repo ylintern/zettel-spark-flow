@@ -23,7 +23,7 @@ pub async fn load_workspace_snapshot(
 ) -> Result<WorkspaceSnapshot, String> {
     let db = state.db().map_err(|err| err.to_string())?;
 
-    db::load_workspace_snapshot(&db, &state.database_dir, &state.security, Some(&app))
+    db::load_workspace_snapshot(&db, &state.myspace_dir, &state.security, Some(&app))
         .await
         .map_err(|err| err.to_string())
 }
@@ -44,7 +44,7 @@ pub async fn save_note(
 
     let db = state.db().map_err(|err| err.to_string())?;
 
-    db::save_note(&db, &state.database_dir, &note, &state.security)
+    db::save_note(&db, &state.myspace_dir, &note, &state.security)
         .await
         .map_err(|err| err.to_string())
 }
@@ -65,7 +65,7 @@ pub async fn delete_note(
 
     let db = state.db().map_err(|err| err.to_string())?;
 
-    db::delete_note(&db, &state.database_dir, &id)
+    db::delete_note(&db, &state.myspace_dir, &id)
         .await
         .map_err(|err| err.to_string())
 }
@@ -126,7 +126,7 @@ pub async fn export_notes(
 
     let db = state.db().map_err(|err| err.to_string())?;
 
-    let snapshot = db::load_workspace_snapshot(&db, &state.database_dir, &state.security, None)
+    let snapshot = db::load_workspace_snapshot(&db, &state.myspace_dir, &state.security, None)
         .await
         .map_err(|err| err.to_string())?;
 

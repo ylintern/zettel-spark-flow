@@ -18,47 +18,9 @@ use crate::{
     state::AppState,
 };
 
-/// One-time silent migration: vault/ → database/
-/// Safe to call on every launch. Does nothing if already migrated or no vault/ present.
-fn migrate_vault_to_database(app_data: &Path) {
-    let old_root = app_data.join("vault");
-    let new_root = app_data.join("database");
-
-    if !old_root.exists() || new_root.exists() {
-        return;
-    }
-
-    if let Err(e) = fs::create_dir_all(&new_root) {
-        eprintln!("[vibo] migration: failed to create database/: {e}");
-        return;
-    }
-
-    // vault/notes → database/notes
-    let old_notes = old_root.join("notes");
-    let new_notes = new_root.join("notes");
-    if old_notes.exists() {
-        if let Err(e) = fs::rename(&old_notes, &new_notes) {
-            eprintln!("[vibo] migration: failed to move notes: {e}");
-            return;
-        }
-        eprintln!("[vibo] migration: vault/notes → database/notes complete");
-    }
-
-    // vault/kanban → database/tasks
-    let old_kanban = old_root.join("kanban");
-    let new_tasks = new_root.join("tasks");
-    if old_kanban.exists() {
-        if let Err(e) = fs::rename(&old_kanban, &new_tasks) {
-            eprintln!("[vibo] migration: failed to move kanban→tasks: {e}");
-            return;
-        }
-        eprintln!("[vibo] migration: vault/kanban → database/tasks complete");
-    }
-
-    // Remove now-empty vault/ dir (best effort — ignore if not empty)
-    let _ = fs::remove_dir(&old_root);
-    eprintln!("[vibo] migration: vault/ → database/ complete");
-}
+/// viboai/myspace - user-selected storage location
+/// Like Obsidian's vault but named for ViboAI
+/// This replaces the old database/ path
 
 /// Bootstrap app directory structure on every launch
 /// Creates: base/, base/notes/, base/tasks/
@@ -130,15 +92,13 @@ pub fn run() {
                 .path()
                 .app_local_data_dir()
                 .expect("failed to resolve app local data dir");
-            // One-time migration: vault/ → database/ (silent, idempotent)
-            migrate_vault_to_database(&app_data_dir);
-
-            let database_dir = app_data_dir.join("database");
+            // viboai/myspace - the user's personal Vibo space
+            let myspace_dir = app_data_dir.join("viboai").join("myspace");
             let db_path = app_data_dir.join("vibo.db");
             let secure_vault_path = app_data_dir.join("secure-vault.hold");
 
-            // Bootstrap app directory structure on every launch
-            if let Err(e) = bootstrap_app_directories(&database_dir) {
+            // Bootstrap viboai/myspace structure on every launch
+            if let Err(e) = bootstrap_app_directories(&myspace_dir) {
                 eprintln!("[vibo] CRITICAL: directory bootstrap failed: {}", e);
             }
 
@@ -148,7 +108,7 @@ pub fn run() {
             app.manage(AppState::new(
                 db,
                 db_path,
-                database_dir,
+                myspace_dir,
                 SecurityState::new(secure_vault_path),
                 BiometricState::new(),
             ));

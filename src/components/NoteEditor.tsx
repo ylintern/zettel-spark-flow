@@ -79,17 +79,20 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose?: () =
   );
 
   const renderContent = (content: string) => {
-    const parts = content.split(/(\[\[[^\]]+\]\])/g);
+    // Match [[target|display]] or [[target]]
+    const parts = content.split(/(\[\[[^\]|]+(?:\|[^\]]+)?\]\])/g);
     return parts.map((part, i) => {
-      const match = part.match(/^\[\[([^\]]+)\]\]$/);
+      const match = part.match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
       if (match) {
+        const target = match[1];
+        const display = match[2] || match[1];
         return (
           <button
             key={i}
-            onClick={() => handleWikiLinkClick(match[1])}
+            onClick={() => handleWikiLinkClick(target)}
             className="text-primary underline underline-offset-2 hover:text-primary/80 font-medium"
           >
-            {match[1]}
+            {display}
           </button>
         );
       }
@@ -264,16 +267,16 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose?: () =
             Links ({wikiLinks.length})
           </h4>
           <div className="flex flex-wrap gap-1.5">
-            {wikiLinks.map((link) => (
-              <Badge
-                key={link}
-                variant="outline"
-                className="cursor-pointer hover:bg-accent"
-                onClick={() => handleWikiLinkClick(link)}
-              >
-                {link}
-              </Badge>
-            ))}
+{wikiLinks.map((link) => (
+                <Badge
+                  key={link.target}
+                  variant="outline"
+                  className="cursor-pointer hover:bg-accent"
+                  onClick={() => handleWikiLinkClick(link.target)}
+                >
+                  {link.display || link.target}
+                </Badge>
+              ))}
           </div>
         </div>
       )}

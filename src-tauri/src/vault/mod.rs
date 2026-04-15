@@ -114,16 +114,19 @@ pub fn delete_note(vault_dir: &Path, relative_path: &str) -> anyhow::Result<()> 
 }
 
 fn render_markdown(note: &WorkspaceNote, security: &SecurityState) -> anyhow::Result<String> {
+    // Use Obsidian-native "type:" field instead of "kind:"
+    let note_type = note.kind();
+
     let mut lines = vec![
         "---".to_string(),
         format!("id: {}", yaml_string(&note.id)),
-        format!("kind: {}", yaml_string(note.kind())),
+        format!("type: {}", yaml_string(note_type)),
         format!("title: {}", yaml_string(&note.title)),
         format!("column: {}", yaml_string(&note.column)),
         format!("position: {}", note.position),
         format!("is_encrypted: {}", note.is_private()),
-        format!("created_at: {}", yaml_string(&note.created_at)),
-        format!("updated_at: {}", yaml_string(&note.updated_at)),
+        format!("created: {}", yaml_string(&note.created_at)),
+        format!("modified: {}", yaml_string(&note.updated_at)),
     ];
 
     match &note.folder {
@@ -144,14 +147,39 @@ fn render_markdown(note: &WorkspaceNote, security: &SecurityState) -> anyhow::Re
 
     lines.push("---".to_string());
     lines.push(String::new());
-    if note.is_private() {
-        lines.push(
-            security
-                .encrypt_note_content(&note.content)
-                .map_err(|err| anyhow::anyhow!(err.to_string()))?,
-        );
+
+    // For tasks, prepend checkbox if not already present
+    if note.is_kanban {
+        let content = &note.content;
+        // Check if content already starts with a checkbox
+        let has_checkbox =
+            content.trim_start().starts_with("- [") || content.trim_start().starts_with("- [x]");
+        if !has_checkbox {
+            // Prepend unchecked checkbox
+            lines.push("- [ ]".to_string());
+            if !content.is_empty() {
+                lines.push(String::new());
+            }
+        }
+        if note.is_private() {
+            lines.push(
+                security
+                    .encrypt_note_content(content)
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?,
+            );
+        } else {
+            lines.push(content.clone());
+        }
     } else {
-        lines.push(note.content.clone());
+        if note.is_private() {
+            lines.push(
+                security
+                    .encrypt_note_content(&note.content)
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?,
+            );
+        } else {
+            lines.push(note.content.clone());
+        }
     }
 
     Ok(lines.join("\n"))

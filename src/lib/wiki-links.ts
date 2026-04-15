@@ -1,20 +1,28 @@
 import { Note } from "./types";
 
-const WIKI_LINK_REGEX = /\[\[([^\]]+)\]\]/g;
+const WIKI_LINK_REGEX = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 
-export function extractWikiLinks(content: string): string[] {
-  const matches: string[] = [];
+export interface WikiLink {
+  target: string;
+  display: string | null;
+}
+
+export function extractWikiLinks(content: string): WikiLink[] {
+  const matches: WikiLink[] = [];
   let match: RegExpExecArray | null;
   while ((match = WIKI_LINK_REGEX.exec(content)) !== null) {
-    matches.push(match[1]);
+    matches.push({
+      target: match[1],
+      display: match[2] || null,
+    });
   }
-  return [...new Set(matches)];
+  return matches;
 }
 
 export function getBacklinks(noteTitle: string, allNotes: Note[]): Note[] {
   return allNotes.filter((n) => {
     const links = extractWikiLinks(n.content);
-    return links.some((l) => l.toLowerCase() === noteTitle.toLowerCase());
+    return links.some((l) => l.target.toLowerCase() === noteTitle.toLowerCase());
   });
 }
 

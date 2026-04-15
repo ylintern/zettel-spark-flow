@@ -214,8 +214,8 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
 
   const addNote = useCallback((column = "inbox", isKanban = false, seed: Partial<Note> = {}) => {
     const now = new Date().toISOString();
-    const kanbanTemplate = isKanban
-      ? "## Task\n\n**Status:** To Do\n**Priority:** Medium\n\n### Description\n\n\n### Acceptance Criteria\n- [ ] \n"
+    let kanbanTemplate = isKanban
+      ? "## Task\n\n- [ ] \n"
       : "";
     const note: Note = {
       id: seed.id || crypto.randomUUID(),

@@ -7,7 +7,7 @@ use crate::state::AppState;
 
 const CLOUD_STREAM_EVENT: &str = "cloud_message_stream";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderMessage {
     pub role: String,
