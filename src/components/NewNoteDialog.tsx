@@ -39,10 +39,10 @@ const TEMPLATE_CONTENT: Record<string, string> = {
 type CreationType = null | "note" | "kanban" | "folder" | "secret";
 
 export function NewNoteDialog({ open, onOpenChange }: Props) {
-  const { addNote, addFolder, folders, toggleNoteEncryption, setActiveView } = useStore();
+  const { addNote, addFolder, userFolders, toggleNoteEncryption, setActiveView } = useStore();
   const [creationType, setCreationType] = useState<CreationType>(null);
   const [folderName, setFolderName] = useState("");
-  const [selectedFolder, setSelectedFolder] = useState("");
+  const [selectedFolder, setSelectedFolder] = useState<string>("");
 
   const handleClose = (v: boolean) => {
     if (!v) setCreationType(null);
@@ -52,11 +52,13 @@ export function NewNoteDialog({ open, onOpenChange }: Props) {
   const createWithTemplate = (templateId: string, isKanban: boolean, isEncrypted: boolean) => {
     const content = TEMPLATE_CONTENT[templateId] || SECRET_TEMPLATE_CONTENT[templateId] || (isKanban ? TEMPLATE_CONTENT.blank : "");
     const template = [...NOTE_TEMPLATES, ...KANBAN_TEMPLATES, ...SECRET_TEMPLATES].find((item) => item.id === templateId);
+    const defaultFolder = isKanban ? "tasks" : "notes";
+    const folder = selectedFolder && selectedFolder.trim().length > 0 ? selectedFolder : defaultFolder;
     addNote("inbox", isKanban, {
       title: template?.label || (isKanban ? "Untitled Task" : "Untitled"),
       content,
       isEncrypted,
-      folder: selectedFolder || undefined,
+      folder,
     });
     setSelectedFolder("");
     setActiveView(isKanban ? "kanban" : "notebook");
@@ -98,21 +100,19 @@ export function NewNoteDialog({ open, onOpenChange }: Props) {
             <DialogTitle>{isEncrypted ? "New Private Note" : "New Note"}</DialogTitle>
             <DialogDescription>Choose a template to get started</DialogDescription>
           </DialogHeader>
-          {folders.length > 0 && (
-            <div className="flex items-center gap-2 py-2">
-              <span className="text-xs text-muted-foreground">Folder:</span>
-              <select
-                value={selectedFolder}
-                onChange={(e) => setSelectedFolder(e.target.value)}
-                className="flex-1 text-xs bg-background border border-border rounded px-2 py-1"
-              >
-                <option value="">No folder</option>
-                {folders.map((f) => (
-                  <option key={f} value={f}>{f}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div className="flex items-center gap-2 py-2">
+            <span className="text-xs text-muted-foreground">Folder:</span>
+            <select
+              value={selectedFolder}
+              onChange={(e) => setSelectedFolder(e.target.value)}
+              className="flex-1 text-xs bg-background border border-border rounded px-2 py-1"
+            >
+              <option value="">notes</option>
+              {userFolders.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+          </div>
           <div className="flex flex-col gap-2 pt-1">
             {templates.map((t) => (
               <button
@@ -146,21 +146,19 @@ export function NewNoteDialog({ open, onOpenChange }: Props) {
             <DialogTitle>New Task</DialogTitle>
             <DialogDescription>Choose a task template</DialogDescription>
           </DialogHeader>
-          {folders.length > 0 && (
-            <div className="flex items-center gap-2 py-2">
-              <span className="text-xs text-muted-foreground">Folder:</span>
-              <select
-                value={selectedFolder}
-                onChange={(e) => setSelectedFolder(e.target.value)}
-                className="flex-1 text-xs bg-background border border-border rounded px-2 py-1"
-              >
-                <option value="">No folder</option>
-                {folders.map((f) => (
-                  <option key={f} value={f}>{f}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div className="flex items-center gap-2 py-2">
+            <span className="text-xs text-muted-foreground">Folder:</span>
+            <select
+              value={selectedFolder}
+              onChange={(e) => setSelectedFolder(e.target.value)}
+              className="flex-1 text-xs bg-background border border-border rounded px-2 py-1"
+            >
+              <option value="">tasks</option>
+              {userFolders.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+          </div>
           <div className="flex flex-col gap-2 pt-1">
             {KANBAN_TEMPLATES.map((t) => (
               <button

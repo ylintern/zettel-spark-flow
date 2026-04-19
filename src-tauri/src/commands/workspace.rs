@@ -5,6 +5,7 @@ use crate::{
     db,
     models::{CallerContext, KanbanColumn, WorkspaceNote, WorkspaceSnapshot},
     state::AppState,
+    vault,
 };
 
 #[derive(Serialize)]
@@ -84,9 +85,20 @@ pub async fn create_folder(
         );
     }
 
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("Folder name cannot be empty".to_string());
+    }
+    if vault::is_reserved_folder(trimmed) {
+        return Err(format!("Folder name '{trimmed}' is reserved"));
+    }
+
     let db = state.db().map_err(|err| err.to_string())?;
 
-    db::create_folder(&db, &name)
+    // Physical-first: materialize the subdir before mirroring into SQL.
+    vault::ensure_folder_dir(&state.myspace_dir, trimmed).map_err(|err| err.to_string())?;
+
+    db::create_folder(&db, trimmed)
         .await
         .map_err(|err| err.to_string())
 }

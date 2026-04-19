@@ -37,7 +37,7 @@ export function DashboardView() {
   );
 
   const kanbanCount = notes.filter((n) => n.isKanban).length;
-  const doneCount = notes.filter((n) => n.isKanban && n.column === "done").length;
+  const doneCount = notes.filter((n) => n.isKanban && n.status === "done").length;
   const recentItems = recentTab === "notes" ? recentNotes : recentTasks;
 
   const greeting = useMemo(() => {
@@ -143,7 +143,7 @@ export function DashboardView() {
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-foreground truncate">{note.title}</div>
                     <div className="text-[10px] text-muted-foreground truncate font-mono">
-                      {recentTab === "tasks" ? note.column : (note.content.slice(0, 50) || "Empty")}
+                      {recentTab === "tasks" ? note.status : (note.content.slice(0, 50) || "Empty")}
                     </div>
                   </div>
                   <Lock className="h-3 w-3 text-muted-foreground/30 shrink-0" />

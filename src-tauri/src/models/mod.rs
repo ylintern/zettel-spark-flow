@@ -27,7 +27,8 @@ pub struct WorkspaceNote {
     pub title: String,
     pub content: String,
     pub tags: Vec<String>,
-    pub column: String,
+    #[serde(alias = "column")]
+    pub status: String,
     pub position: i64,
     pub is_kanban: bool,
     pub created_at: String,

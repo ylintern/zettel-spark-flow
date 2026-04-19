@@ -49,7 +49,7 @@ function TaskDots({ tasks, onTaskClick }: { tasks: Note[]; onTaskClick?: (id: st
   return (
     <div className="flex gap-0.5 mt-0.5">
       {tasks.slice(0, 3).map((t) => (
-        <div key={t.id} className={`w-1.5 h-1.5 rounded-full ${getColumnColor(t.column)}`} title={t.title} />
+        <div key={t.id} className={`w-1.5 h-1.5 rounded-full ${getColumnColor(t.status)}`} title={t.title} />
       ))}
       {tasks.length > 3 && (
         <span className="text-[7px] text-muted-foreground leading-none">+{tasks.length - 3}</span>

@@ -1,4 +1,5 @@
 mod commands;
+mod config;
 mod db;
 mod events;
 mod models;
@@ -9,7 +10,6 @@ mod state;
 mod vault;
 
 use std::fs;
-use std::path::Path;
 
 use tauri::Manager;
 
@@ -17,25 +17,6 @@ use crate::{
     security::{biometric::BiometricState, derive_vault_key, SecurityState},
     state::AppState,
 };
-
-/// viboai/myspace - user-selected storage location
-/// Like Obsidian's vault but named for ViboAI
-/// This replaces the old database/ path
-
-/// Bootstrap app directory structure on every launch
-/// Creates: base/, base/notes/, base/tasks/
-/// Self-healing: missing directories are created silently
-/// Error handling: logs failure but does not panic
-fn bootstrap_app_directories(base: &Path) -> Result<(), String> {
-    let dirs = [base.to_path_buf(), base.join("notes"), base.join("tasks")];
-    for dir in &dirs {
-        if !dir.exists() {
-            fs::create_dir_all(dir).map_err(|e| format!("bootstrap failed {:?}: {}", dir, e))?;
-            eprintln!("[vibo] created missing directory: {:?}", dir);
-        }
-    }
-    Ok(())
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -92,18 +73,42 @@ pub fn run() {
                 .path()
                 .app_local_data_dir()
                 .expect("failed to resolve app local data dir");
-            // viboai/myspace - the user's personal Vibo space
-            let myspace_dir = app_data_dir.join("viboai").join("myspace");
-            let db_path = app_data_dir.join("vibo.db");
-            let secure_vault_path = app_data_dir.join("secure-vault.hold");
+            // Phase 0.5 two-tree layout:
+            //   viboai/myspace/   — user-visible vault (Obsidian-compatible)
+            //   viboai/database/  — internal SQL + stronghold
+            let viboai_dir = app_data_dir.join("viboai");
+            let myspace_dir = viboai_dir.join("myspace");
+            let database_dir = viboai_dir.join("database");
+            let db_path = database_dir.join("vibo.db");
+            let secure_vault_path = database_dir.join("secure-vault.hold");
 
-            // Bootstrap viboai/myspace structure on every launch
-            if let Err(e) = bootstrap_app_directories(&myspace_dir) {
-                eprintln!("[vibo] CRITICAL: directory bootstrap failed: {}", e);
+            // Ensure both trees exist (idempotent via create_dir_all).
+            if let Err(e) = fs::create_dir_all(&database_dir) {
+                eprintln!("[vibo] CRITICAL: database dir bootstrap failed: {}", e);
+            }
+            if let Err(e) = vault::ensure_vault_dirs(&myspace_dir) {
+                eprintln!("[vibo] CRITICAL: myspace bootstrap failed: {}", e);
+            }
+
+            // One-time migration: move legacy DB files (bundle root) into database/.
+            for name in ["vibo.db", "vibo.db-shm", "vibo.db-wal", "secure-vault.hold"] {
+                let legacy = app_data_dir.join(name);
+                let target = database_dir.join(name);
+                if legacy.exists() && !target.exists() {
+                    if let Err(e) = fs::rename(&legacy, &target) {
+                        eprintln!("[vibo] legacy {} migration failed: {}", name, e);
+                    } else {
+                        eprintln!("[vibo] migrated {} into database/", name);
+                    }
+                }
             }
 
             let db = tauri::async_runtime::block_on(db::init_pool(&db_path))
                 .expect("failed to initialize app database");
+
+            // Initialize default folders on first launch
+            tauri::async_runtime::block_on(db::init_default_folders(&db))
+                .unwrap_or_else(|e| eprintln!("[vibo] failed to initialize default folders: {}", e));
 
             app.manage(AppState::new(
                 db,
@@ -150,6 +155,7 @@ pub fn run() {
             security::biometric::disable_biometric_unlock,
             security::biometric::verify_biometric_and_unlock,
             security::biometric::fallback_passphrase_unlock,
+            config::features::get_feature_flags,
             providers::stream_cloud_message,
         ])
         .run(tauri::generate_context!())

@@ -13,10 +13,14 @@ import { OnboardingWizard, isOnboardingDone } from "@/components/OnboardingWizar
 import type { OnboardingConfig } from "@/components/OnboardingWizard";
 import { StoreProvider, useStore } from "@/lib/store";
 import {
+  getFeatureFlags,
   isTauriRuntimeAvailable,
   isVaultConfigured,
   isVaultUnlocked,
+  loadWorkspaceSnapshot,
   onVaultStatusChanged,
+  PHASE_0_FEATURE_FLAGS,
+  type FeatureFlags,
 } from "@/lib/commands";
 import { deriveVaultPhase, type VaultPhase, type VaultStatus } from "@/lib/vaultPhase";
 import { Plus, MessageCircle, X, SquarePlus } from "lucide-react";
@@ -187,10 +191,20 @@ const Index = () => {
   const [phase, setPhase] = useState<VaultPhase>("onboarding");
   const [pin, setPin] = useState("");
   const [initialNotes, setInitialNotes] = useState<Note[]>([]);
+  // Runtime feature flags. Phase 0: encryption/biometric dormant.
+  // When `encryption_enabled === false` we skip the LockScreen phase entirely
+  // without removing any of the underlying unlock code paths.
+  const [flags, setFlags] = useState<FeatureFlags>(PHASE_0_FEATURE_FLAGS);
+  const [flagsReady, setFlagsReady] = useState(false);
 
   useEffect(() => {
     if (!isTauriRuntimeAvailable()) {
-      setPhase(isOnboardingDone() ? "lock" : "onboarding");
+      // Web preview has no Rust backend — fall back to Phase 0 defaults
+      // (encryption dormant) and advance directly to the app once the user
+      // has completed the onboarding wizard.
+      setFlags(PHASE_0_FEATURE_FLAGS);
+      setFlagsReady(true);
+      setPhase(isOnboardingDone() ? "app" : "onboarding");
       return;
     }
 
@@ -198,16 +212,47 @@ const Index = () => {
 
     async function syncPhase() {
       try {
+        const resolvedFlags = await getFeatureFlags();
+        if (cancelled) return;
+        setFlags(resolvedFlags);
+        setFlagsReady(true);
+
+        // Phase 0 path: encryption dormant. Vault configuration/unlock state
+        // is irrelevant — skip the LockScreen entirely. OnboardingWizard still
+        // runs on first launch for non-encryption UX (name, model, cloud keys).
+        if (!resolvedFlags.encryption_enabled) {
+          // Silent reuse: if the vault already contains notes/tasks/folders,
+          // treat onboarding as complete even if localStorage was cleared
+          // (e.g. bundle-identifier swap wiping the WebKit origin).
+          if (!isOnboardingDone()) {
+            try {
+              const snap = await loadWorkspaceSnapshot();
+              const hasData =
+                (snap.notes?.length ?? 0) > 0 ||
+                (snap.folders?.length ?? 0) > 0;
+              if (hasData) {
+                localStorage.setItem("zettel-onboarding-done", "true");
+              }
+            } catch {
+              // Snapshot unavailable — fall back to wizard.
+            }
+          }
+          setPhase(isOnboardingDone() ? "app" : "onboarding");
+          return;
+        }
+
+        // Phase 2/3 path: encryption active — original behavior preserved.
         const [configured, unlocked] = await Promise.all([
           isVaultConfigured(),
           isVaultUnlocked(),
         ]);
-
         if (!cancelled) {
           setPhase(deriveVaultPhase({ configured, unlocked }));
         }
       } catch {
         if (!cancelled) {
+          setFlags(PHASE_0_FEATURE_FLAGS);
+          setFlagsReady(true);
           setPhase("onboarding");
         }
       }
@@ -221,6 +266,13 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
+    // When encryption is dormant, vault_status_changed events must not drive
+    // phase transitions (no LockScreen to show). The event wiring is preserved
+    // so Phase 2/3 flips the flag and this effect re-activates end-to-end.
+    if (!flags.encryption_enabled) {
+      return;
+    }
+
     if (!isTauriRuntimeAvailable()) {
       const handleVaultLocked = () => setPhase("lock");
       window.addEventListener("vibo:vault-locked", handleVaultLocked);
@@ -245,10 +297,16 @@ const Index = () => {
     return () => {
       dispose();
     };
-  }, []);
+  }, [flags.encryption_enabled]);
 
   const handleOnboardingComplete = (_config: OnboardingConfig) => {
-    setPhase("lock");
+    // Phase 0 (encryption dormant): skip LockScreen, go straight to workspace.
+    // Phase 2/3 (encryption active): original flow — user must set passphrase
+    // via the vault unlock screen next.
+    const shouldRequireLock = flagsReady
+      ? flags.encryption_enabled
+      : isTauriRuntimeAvailable();
+    setPhase(shouldRequireLock ? "lock" : "app");
   };
 
   const handleUnlock = async (enteredPin: string) => {

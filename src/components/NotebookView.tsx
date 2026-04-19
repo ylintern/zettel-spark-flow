@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 type NoteTab = "notes" | "private";
 
 export function NotebookView() {
-  const { notes, folders, selectedNoteId, selectNote, addNote, addFolder } = useStore();
+  const { notes, userFolders, selectedNoteId, selectNote, addNote, addFolder } = useStore();
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<NoteTab>("notes");
@@ -39,17 +39,24 @@ export function NotebookView() {
     });
   }, [notes, search, tagFilter, activeTab]);
 
-  // Group notes by folder
+  // Group notes by folder. Notes with folder === "notes" (default) render
+  // as the implicit top group. User folders render as expandable sections.
+  // Case-insensitive folder matching so "Research2" and "research2" bucket together.
   const groupedNotes = useMemo(() => {
-    const groups: Record<string, typeof filtered> = { "": [] };
-    for (const f of folders) groups[f] = [];
+    const groups: Record<string, typeof filtered> = { notes: [] };
+    const folderByLower = new Map<string, string>();
+    for (const f of userFolders) {
+      groups[f] = [];
+      folderByLower.set(f.toLowerCase(), f);
+    }
     for (const n of filtered) {
-      const folder = n.folder || "";
-      if (!groups[folder]) groups[folder] = [];
-      groups[folder].push(n);
+      const raw = n.folder && n.folder.trim().length > 0 ? n.folder.trim() : "notes";
+      const canonical = folderByLower.get(raw.toLowerCase()) ?? (raw.toLowerCase() === "notes" ? "notes" : raw);
+      if (!groups[canonical]) groups[canonical] = [];
+      groups[canonical].push(n);
     }
     return groups;
-  }, [filtered, folders]);
+  }, [filtered, userFolders]);
 
   const toggleFolder = (folder: string) => {
     setExpandedFolders((prev) => {
@@ -190,13 +197,13 @@ export function NotebookView() {
 
       <ScrollArea className="flex-1">
         <div className="p-3 space-y-1">
-          {/* Root notes (no folder) */}
-          {(groupedNotes[""] || []).map((note) => (
+          {/* Default "notes" group — implicit, unlabelled top group */}
+          {(groupedNotes["notes"] || []).map((note) => (
             <NoteListItem key={note.id} note={note} onSelect={selectNote} />
           ))}
 
-          {/* Folder groups */}
-          {folders.map((folder) => {
+          {/* User folder groups */}
+          {userFolders.map((folder) => {
             const folderNotes = groupedNotes[folder] || [];
             const isExpanded = expandedFolders.has(folder);
             return (

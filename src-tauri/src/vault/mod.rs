@@ -4,16 +4,44 @@ use anyhow::Context;
 use tauri::AppHandle;
 
 use crate::{
+    config::FLAGS,
     events::{self, NoteIndexingProgressEvent},
     models::WorkspaceNote,
     security::SecurityState,
 };
 
+pub mod frontmatter;
+pub mod reconcile;
+use frontmatter::NoteFrontmatter;
+
+/// Reserved folder names. Never allowed as user-created folders.
+/// - Type defaults: `notes`, `tasks`
+/// - Infrastructure (Phase 1+): `agents`, `skills`, `roles`, `providers`, `tools`, `mcp`, `plugin`
+pub const RESERVED_FOLDER_NAMES: &[&str] = &[
+    "notes", "tasks", "agents", "skills", "roles", "providers", "tools", "mcp", "plugin",
+];
+
+pub fn is_reserved_folder(name: &str) -> bool {
+    let n = name.trim().to_lowercase();
+    RESERVED_FOLDER_NAMES.iter().any(|r| *r == n)
+}
+
 pub fn ensure_vault_dirs(vault_dir: &Path) -> anyhow::Result<()> {
-    fs::create_dir_all(vault_dir.join("notes"))
-        .with_context(|| format!("failed to create notes dir {}", vault_dir.display()))?;
-    fs::create_dir_all(vault_dir.join("tasks"))
-        .with_context(|| format!("failed to create tasks dir {}", vault_dir.display()))?;
+    for name in RESERVED_FOLDER_NAMES {
+        fs::create_dir_all(vault_dir.join(name)).with_context(|| {
+            format!("failed to create reserved dir {}/{}", vault_dir.display(), name)
+        })?;
+    }
+    Ok(())
+}
+
+pub fn ensure_folder_dir(vault_dir: &Path, folder: &str) -> anyhow::Result<()> {
+    let trimmed = folder.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    fs::create_dir_all(vault_dir.join(trimmed))
+        .with_context(|| format!("failed to create folder dir {}/{}", vault_dir.display(), trimmed))?;
     Ok(())
 }
 
@@ -41,11 +69,16 @@ pub fn write_note(
 ) -> anyhow::Result<String> {
     ensure_vault_dirs(vault_dir)?;
 
-    let relative_path = if note.is_kanban {
-        task_relative_path(&note.id)
-    } else {
-        note_relative_path(&note.id)
-    };
+    let default_subdir = if note.is_kanban { "tasks" } else { "notes" };
+    let subdir = note
+        .folder
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default_subdir);
+    ensure_folder_dir(vault_dir, subdir)?;
+
+    let relative_path = format!("{subdir}/{}.md", note.id);
     let absolute_path = vault_dir.join(&relative_path);
     let markdown = render_markdown(note, security)?;
 
@@ -66,7 +99,7 @@ pub fn read_note(
         .with_context(|| format!("failed to read note file {}", absolute_path.display()))?;
 
     let body = extract_body(&markdown);
-    if is_encrypted {
+    if FLAGS.encryption_enabled && is_encrypted {
         return security
             .decrypt_note_content(&body)
             .map_err(|err| anyhow::anyhow!(err.to_string()));
@@ -116,37 +149,30 @@ pub fn delete_note(vault_dir: &Path, relative_path: &str) -> anyhow::Result<()> 
 fn render_markdown(note: &WorkspaceNote, security: &SecurityState) -> anyhow::Result<String> {
     // Use Obsidian-native "type:" field instead of "kind:"
     let note_type = note.kind();
+    let is_effectively_encrypted = FLAGS.encryption_enabled && note.is_private();
 
+    // Build frontmatter using type-safe serde_yml serialization.
+    // This ensures special characters (colons, quotes, emojis) are properly escaped.
+    let frontmatter = NoteFrontmatter {
+        id: note.id.clone(),
+        note_type: note_type.to_string(),
+        title: note.title.clone(),
+        status: note.status.clone(),
+        position: note.position,
+        is_encrypted: is_effectively_encrypted,
+        created: note.created_at.clone(),
+        modified: note.updated_at.clone(),
+        folder: note.folder.clone(),
+        tags: note.tags.clone(),
+    };
+
+    let yaml_block = serde_yml::to_string(&frontmatter)?;
     let mut lines = vec![
         "---".to_string(),
-        format!("id: {}", yaml_string(&note.id)),
-        format!("type: {}", yaml_string(note_type)),
-        format!("title: {}", yaml_string(&note.title)),
-        format!("column: {}", yaml_string(&note.column)),
-        format!("position: {}", note.position),
-        format!("is_encrypted: {}", note.is_private()),
-        format!("created: {}", yaml_string(&note.created_at)),
-        format!("modified: {}", yaml_string(&note.updated_at)),
+        yaml_block.trim_end().to_string(),
+        "---".to_string(),
+        String::new(),
     ];
-
-    match &note.folder {
-        Some(folder) if !folder.is_empty() => {
-            lines.push(format!("folder: {}", yaml_string(folder)))
-        }
-        _ => lines.push("folder: null".to_string()),
-    }
-
-    lines.push("tags:".to_string());
-    if note.tags.is_empty() {
-        lines.push("  []".to_string());
-    } else {
-        for tag in &note.tags {
-            lines.push(format!("  - {}", yaml_string(tag)));
-        }
-    }
-
-    lines.push("---".to_string());
-    lines.push(String::new());
 
     // For tasks, prepend checkbox if not already present
     if note.is_kanban {
@@ -161,7 +187,7 @@ fn render_markdown(note: &WorkspaceNote, security: &SecurityState) -> anyhow::Re
                 lines.push(String::new());
             }
         }
-        if note.is_private() {
+        if is_effectively_encrypted {
             lines.push(
                 security
                     .encrypt_note_content(content)
@@ -171,7 +197,7 @@ fn render_markdown(note: &WorkspaceNote, security: &SecurityState) -> anyhow::Re
             lines.push(content.clone());
         }
     } else {
-        if note.is_private() {
+        if is_effectively_encrypted {
             lines.push(
                 security
                     .encrypt_note_content(&note.content)
@@ -195,6 +221,9 @@ fn extract_body(markdown: &str) -> String {
     markdown.to_string()
 }
 
-fn yaml_string(value: &str) -> String {
+/// Legacy YAML string escaper using Rust Debug format.
+/// Kept for reference and rollback capability. Phase 0+ uses serde_yml instead.
+#[allow(dead_code)]
+fn yaml_string_legacy(value: &str) -> String {
     format!("{value:?}")
 }

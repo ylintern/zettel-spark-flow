@@ -57,6 +57,29 @@ export interface DeviceCapabilities {
   supportsPassphrase: boolean;
 }
 
+/**
+ * Runtime feature flags returned by `config::features::get_feature_flags`.
+ *
+ * Phase 0 (current): all flags false — encryption/biometric/iOS code paths
+ * remain compiled in but are bypassed. Flipping a flag in Rust and recompiling
+ * re-activates the original behavior end-to-end, no code resurrection needed.
+ *
+ * Field names intentionally match the Rust struct (serde default serialization,
+ * no rename). See src-tauri/src/config/features.rs.
+ */
+export interface FeatureFlags {
+  encryption_enabled: boolean;
+  biometric_enabled: boolean;
+  ios_enabled: boolean;
+}
+
+/** Safe Phase 0 defaults for contexts without a Tauri runtime (web preview). */
+export const PHASE_0_FEATURE_FLAGS: FeatureFlags = {
+  encryption_enabled: false,
+  biometric_enabled: false,
+  ios_enabled: false,
+};
+
 export function isTauriRuntimeAvailable(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -152,6 +175,17 @@ export async function verifyBiometricUnlock(): Promise<boolean> {
 
 export async function fallbackPassphraseUnlock(passphrase: string): Promise<void> {
   return tauriInvoke<void>("fallback_passphrase_unlock", { passphrase });
+}
+
+/**
+ * Fetch runtime feature flags from the Rust backend.
+ *
+ * Frontend uses this on mount to decide whether to mount LockScreen, render
+ * lock icons, show biometric Settings, etc. All rendering that depends on
+ * encryption/biometric/iOS behavior should be gated by the returned flags.
+ */
+export async function getFeatureFlags(): Promise<FeatureFlags> {
+  return tauriInvoke<FeatureFlags>("get_feature_flags");
 }
 
 async function subscribeToEvent<T>(

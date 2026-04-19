@@ -8,6 +8,7 @@ use sqlx::{
 use tauri::AppHandle;
 
 use crate::{
+    config::FLAGS,
     models::{KanbanColumn, WorkspaceNote, WorkspaceSnapshot},
     security::SecurityState,
     vault,
@@ -64,6 +65,12 @@ pub async fn load_workspace_snapshot(
     security: &SecurityState,
     app: Option<&AppHandle>,
 ) -> anyhow::Result<WorkspaceSnapshot> {
+    // Phase 0.6: reconcile SQL to match filesystem before reading. Skips missing
+    // files, adopts foreign .md files, deletes stale SQL rows. Non-fatal on error.
+    if let Err(err) = vault::reconcile::reconcile_vault(pool, vault_dir, security).await {
+        log::warn!("[vibo] reconcile_vault failed (continuing with existing SQL): {err:#}");
+    }
+
     let note_rows = sqlx::query(
         r#"
         SELECT id, title, file_path, folder, column_id, position, kind, created_at, updated_at, is_encrypted
@@ -82,25 +89,65 @@ pub async fn load_workspace_snapshot(
     }
 
     for (index, row) in note_rows.into_iter().enumerate() {
-        let id: String = row.try_get("id")?;
-        let relative_path: String = row.try_get("file_path")?;
-        let tags = load_tags(pool, &id).await?;
-        let is_encrypted = row.try_get::<i64, _>("is_encrypted")? != 0;
-        let content = vault::read_note(vault_dir, &relative_path, is_encrypted, security)?;
+        // Per-note error tolerance (Phase 0.6 Layer 1): one corrupt / missing
+        // file must never abort the whole snapshot. Log + skip and continue.
+        let id: String = match row.try_get("id") {
+            Ok(v) => v,
+            Err(err) => {
+                log::warn!("[vibo] snapshot: skipping row with unreadable id: {err}");
+                continue;
+            }
+        };
+        let relative_path: String = match row.try_get("file_path") {
+            Ok(v) => v,
+            Err(err) => {
+                log::warn!("[vibo] snapshot: skipping note {id}: unreadable file_path: {err}");
+                continue;
+            }
+        };
+        let tags = match load_tags(pool, &id).await {
+            Ok(v) => v,
+            Err(err) => {
+                log::warn!("[vibo] snapshot: skipping note {id}: failed to load tags: {err}");
+                continue;
+            }
+        };
+        let stored_is_encrypted = row.try_get::<i64, _>("is_encrypted").unwrap_or(0) != 0;
+        let effective_is_encrypted = FLAGS.encryption_enabled && stored_is_encrypted;
+        let content = match vault::read_note(vault_dir, &relative_path, stored_is_encrypted, security) {
+            Ok(v) => v,
+            Err(err) => {
+                log::warn!(
+                    "[vibo] snapshot: skipping note {id} ({relative_path}): {err:#}"
+                );
+                if let Some(app) = app {
+                    let _ = vault::emit_indexing_progress(app, Some(&id), index + 1, total_notes);
+                }
+                continue;
+            }
+        };
+
+        let title: String = row.try_get("title").unwrap_or_default();
+        let status: String = row.try_get("column_id").unwrap_or_default();
+        let position: i64 = row.try_get("position").unwrap_or(0);
+        let kind: String = row.try_get("kind").unwrap_or_else(|_| "note".into());
+        let created_at: String = row.try_get("created_at").unwrap_or_default();
+        let updated_at: String = row.try_get("updated_at").unwrap_or_default();
+        let folder: Option<String> = row.try_get("folder").ok();
         let event_note_id = id.clone();
 
         notes.push(WorkspaceNote {
             id,
-            title: row.try_get("title")?,
+            title,
             content,
             tags,
-            column: row.try_get("column_id")?,
-            position: row.try_get("position")?,
-            is_kanban: row.try_get::<String, _>("kind")? == "task",
-            created_at: row.try_get("created_at")?,
-            updated_at: row.try_get("updated_at")?,
-            folder: row.try_get("folder")?,
-            is_encrypted: Some(is_encrypted),
+            status,
+            position,
+            is_kanban: kind == "task",
+            created_at,
+            updated_at,
+            folder,
+            is_encrypted: Some(effective_is_encrypted),
         });
 
         if let Some(app) = app {
@@ -116,6 +163,25 @@ pub async fn load_workspace_snapshot(
         .into_iter()
         .map(|row| row.try_get("name"))
         .collect::<Result<Vec<String>, _>>()?;
+
+    // Phase 0.5 physical-first recovery: ensure every SQL-known folder has a
+    // physical subdir under myspace/. Also ensure any folder referenced by a
+    // note row exists on disk (covers drift / restored DB / pre-0.5 data).
+    for folder in &folders {
+        if let Err(err) = vault::ensure_folder_dir(vault_dir, folder) {
+            log::warn!("snapshot: failed to ensure folder dir '{folder}': {err}");
+        }
+    }
+    for note in &notes {
+        if let Some(folder) = note.folder.as_deref().filter(|s| !s.is_empty()) {
+            if let Err(err) = vault::ensure_folder_dir(vault_dir, folder) {
+                log::warn!(
+                    "snapshot: failed to ensure folder dir '{folder}' for note {}: {err}",
+                    note.id
+                );
+            }
+        }
+    }
 
     let columns = load_columns(pool).await?;
 
@@ -134,60 +200,117 @@ pub async fn save_note(
     note: &WorkspaceNote,
     security: &SecurityState,
 ) -> anyhow::Result<()> {
-    let relative_path = vault::write_note(vault_dir, note, security)?;
+    // 0. Fetch the old file path BEFORE we update it (for move/folder-change cleanup).
+    let old_file_path = sqlx::query("SELECT file_path FROM notes WHERE id = ?")
+        .bind(&note.id)
+        .fetch_optional(pool)
+        .await?
+        .map(|row| row.try_get::<String, _>("file_path"))
+        .transpose()?;
 
+    // 1. FS write first — capture absolute path for compensating rollback.
+    let relative_path = vault::write_note(vault_dir, note, security)?;
+    let absolute_path = vault_dir.join(&relative_path);
+    let effective_is_encrypted = FLAGS.encryption_enabled && note.is_private();
+
+    // 2. Ensure folder row exists (idempotent; outside tx to avoid nested-pool issues).
     if let Some(folder) = note.folder.as_ref().filter(|folder| !folder.is_empty()) {
         create_folder(pool, folder).await?;
     }
 
-    sqlx::query(
-        r#"
-        INSERT INTO notes (
-          id, title, file_path, folder, column_id, position, kind, created_at, updated_at, is_encrypted
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          title = excluded.title,
-          file_path = excluded.file_path,
-          folder = excluded.folder,
-          column_id = excluded.column_id,
-          position = excluded.position,
-          kind = excluded.kind,
-          created_at = excluded.created_at,
-          updated_at = excluded.updated_at,
-          is_encrypted = excluded.is_encrypted
-        "#,
-    )
-    .bind(&note.id)
-    .bind(&note.title)
-    .bind(&relative_path)
-    .bind(note.folder.as_deref())
-    .bind(&note.column)
-    .bind(note.position)
-    .bind(note.kind())
-    .bind(&note.created_at)
-    .bind(&note.updated_at)
-    .bind(if note.is_private() { 1_i64 } else { 0_i64 })
-    .execute(pool)
-    .await?;
+    // 3. All SQL mutations for this note inside a single transaction.
+    //    On any error → rollback SQL + delete the MD we just wrote (compensating).
+    let tx_result = async {
+        let mut tx = pool.begin().await?;
 
-    sqlx::query("DELETE FROM note_tags WHERE note_id = ?")
+        sqlx::query(
+            r#"
+            INSERT INTO notes (
+              id, title, file_path, folder, column_id, position, kind, created_at, updated_at, is_encrypted
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              title = excluded.title,
+              file_path = excluded.file_path,
+              folder = excluded.folder,
+              column_id = excluded.column_id,
+              position = excluded.position,
+              kind = excluded.kind,
+              created_at = excluded.created_at,
+              updated_at = excluded.updated_at,
+              is_encrypted = excluded.is_encrypted
+            "#,
+        )
         .bind(&note.id)
-        .execute(pool)
+        .bind(&note.title)
+        .bind(&relative_path)
+        .bind(note.folder.as_deref())
+        .bind(&note.status)
+        .bind(note.position)
+        .bind(note.kind())
+        .bind(&note.created_at)
+        .bind(&note.updated_at)
+        .bind(if effective_is_encrypted { 1_i64 } else { 0_i64 })
+        .execute(&mut *tx)
         .await?;
 
-    for tag in note.tags.iter().filter(|tag| !tag.trim().is_empty()) {
-        sqlx::query("INSERT OR IGNORE INTO note_tags (note_id, tag) VALUES (?, ?)")
+        sqlx::query("DELETE FROM note_tags WHERE note_id = ?")
             .bind(&note.id)
-            .bind(tag.trim())
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
+
+        for tag in note.tags.iter().filter(|tag| !tag.trim().is_empty()) {
+            sqlx::query("INSERT OR IGNORE INTO note_tags (note_id, tag) VALUES (?, ?)")
+                .bind(&note.id)
+                .bind(tag.trim())
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        tx.commit().await?;
+        Ok::<(), anyhow::Error>(())
+    }
+    .await;
+
+    if let Err(err) = tx_result {
+        // Compensating FS cleanup — best effort. If this fails, log and surface
+        // original error; orphan sweep (Phase 0.5) will reconcile later.
+        if let Err(cleanup_err) = fs::remove_file(&absolute_path) {
+            log::warn!(
+                "[vibo] save_note SQL failed and FS cleanup also failed for {}: {} (original: {})",
+                absolute_path.display(),
+                cleanup_err,
+                err
+            );
+        } else {
+            log::warn!(
+                "[vibo] save_note SQL failed; rolled back MD at {} (original: {})",
+                absolute_path.display(),
+                err
+            );
+        }
+        return Err(err);
+    }
+
+    // Post-transaction cleanup: if the note moved folders, delete the old file.
+    if let Some(old_path) = old_file_path {
+        if old_path != relative_path {
+            let old_absolute_path = vault_dir.join(&old_path);
+            if let Err(err) = fs::remove_file(&old_absolute_path) {
+                log::warn!(
+                    "[vibo] save_note: failed to clean up old file {} after move: {}",
+                    old_absolute_path.display(),
+                    err
+                );
+            }
+        }
     }
 
     Ok(())
 }
 
 pub async fn delete_note(pool: &SqlitePool, vault_dir: &Path, note_id: &str) -> anyhow::Result<()> {
+    // Resolve file path before mutating — needed for post-commit FS delete.
     let file_path = sqlx::query("SELECT file_path FROM notes WHERE id = ?")
         .bind(note_id)
         .fetch_optional(pool)
@@ -195,18 +318,28 @@ pub async fn delete_note(pool: &SqlitePool, vault_dir: &Path, note_id: &str) -> 
         .map(|row| row.try_get::<String, _>("file_path"))
         .transpose()?;
 
+    // SQL is the source of truth — delete rows atomically first.
+    let mut tx = pool.begin().await?;
     sqlx::query("DELETE FROM note_tags WHERE note_id = ?")
         .bind(note_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
-
     sqlx::query("DELETE FROM notes WHERE id = ?")
         .bind(note_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
+    tx.commit().await?;
 
+    // FS delete happens after SQL commit. If it fails, log and proceed —
+    // DB already reflects deletion; orphan sweep (Phase 0.5) reconciles.
     if let Some(path) = file_path {
-        vault::delete_note(vault_dir, &path)?;
+        if let Err(err) = vault::delete_note(vault_dir, &path) {
+            log::warn!(
+                "[vibo] delete_note: SQL committed but FS delete failed for {} (orphan): {}",
+                path,
+                err
+            );
+        }
     }
 
     Ok(())
@@ -218,11 +351,25 @@ pub async fn create_folder(pool: &SqlitePool, folder_name: &str) -> anyhow::Resu
         return Ok(());
     }
 
+    // Reserved names (notes, tasks, agents, ...) live only on disk. Never seed them
+    // into the folders table — any caller (including save_note) is protected here.
+    if vault::is_reserved_folder(trimmed) {
+        return Ok(());
+    }
+
     sqlx::query("INSERT OR IGNORE INTO folders (name, created_at) VALUES (?, CURRENT_TIMESTAMP)")
         .bind(trimmed)
         .execute(pool)
         .await?;
 
+    Ok(())
+}
+
+/// Phase 0.5: default folders (`notes`, `tasks`) are NOT seeded into the
+/// `folders` SQL table. They are reserved names created physically on disk
+/// by `vault::ensure_vault_dirs`. The `folders` table is reserved for
+/// user-created folders only, so the UI can iterate it without filtering.
+pub async fn init_default_folders(_pool: &SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
@@ -332,6 +479,15 @@ async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    // Phase 0.5 cleanup: evict reserved names that may have leaked into folders
+    // via older save_note paths. Idempotent — safe on every launch.
+    for reserved in vault::RESERVED_FOLDER_NAMES {
+        sqlx::query("DELETE FROM folders WHERE name = ?")
+            .bind(reserved)
+            .execute(pool)
+            .await?;
+    }
+
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS columns (
@@ -375,7 +531,7 @@ mod tests {
                 title: "Cold Start Note".to_string(),
                 content: "Persistence must survive app restart.".to_string(),
                 tags: vec!["zettel".to_string(), "phase-0".to_string()],
-                column: "inbox".to_string(),
+                status: "inbox".to_string(),
                 position: 10,
                 is_kanban: false,
                 created_at: "2026-04-07T00:00:00.000Z".to_string(),

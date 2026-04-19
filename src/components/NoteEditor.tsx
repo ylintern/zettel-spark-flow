@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { extractWikiLinks, getBacklinks } from "@/lib/wiki-links";
 import { Textarea } from "@/components/ui/textarea";
@@ -7,16 +7,51 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Trash2, Eye, Edit2, X, Plus, Lock, Unlock, FolderOpen } from "lucide-react";
 import type { Note } from "@/lib/types";
+import {
+  getFeatureFlags,
+  isTauriRuntimeAvailable,
+  PHASE_0_FEATURE_FLAGS,
+  type FeatureFlags,
+} from "@/lib/commands";
 
 export function NoteEditor({ noteId, onClose }: { noteId: string; onClose?: () => void }) {
-  const { notes, folders, updateNote, deleteNote, selectNote, toggleNoteEncryption, moveNoteToFolder, getNoteSaveState } = useStore();
+  const { notes, userFolders, updateNote, deleteNote, selectNote, toggleNoteEncryption, moveNoteToFolder, getNoteSaveState } = useStore();
   const note = notes.find((n) => n.id === noteId);
   const [preview, setPreview] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [showFolderMenu, setShowFolderMenu] = useState(false);
+  const [flags, setFlags] = useState<FeatureFlags>(PHASE_0_FEATURE_FLAGS);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showLinkSuggest, setShowLinkSuggest] = useState(false);
   const [linkQuery, setLinkQuery] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadFlags() {
+      if (!isTauriRuntimeAvailable()) {
+        setFlags(PHASE_0_FEATURE_FLAGS);
+        return;
+      }
+
+      try {
+        const resolvedFlags = await getFeatureFlags();
+        if (!cancelled) {
+          setFlags(resolvedFlags);
+        }
+      } catch {
+        if (!cancelled) {
+          setFlags(PHASE_0_FEATURE_FLAGS);
+        }
+      }
+    }
+
+    void loadFlags();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!note) return null;
 
@@ -119,15 +154,17 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose?: () =
         }`}>
           {saveState === "error" ? "Save error" : saveState === "saving" ? "Saving..." : "Saved"}
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => toggleNoteEncryption(noteId)}
-          title={note.isEncrypted ? "Decrypt note" : "Encrypt note"}
-        >
-          {note.isEncrypted ? <Lock className="h-3.5 w-3.5 text-primary" /> : <Unlock className="h-3.5 w-3.5" />}
-        </Button>
+        {flags.encryption_enabled && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => toggleNoteEncryption(noteId)}
+            title={note.isEncrypted ? "Decrypt note" : "Encrypt note"}
+          >
+            {note.isEncrypted ? <Lock className="h-3.5 w-3.5 text-primary" /> : <Unlock className="h-3.5 w-3.5" />}
+          </Button>
+        )}
         <div className="relative">
           <Button
             variant="ghost"
@@ -138,25 +175,24 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose?: () =
           >
             <FolderOpen className="h-3.5 w-3.5" />
           </Button>
-          {showFolderMenu && (
-            <div className="absolute right-0 top-9 z-50 w-48 rounded-lg border border-border bg-popover p-1 shadow-lg">
-              <button
-                onClick={() => { moveNoteToFolder(noteId, ""); setShowFolderMenu(false); }}
-                className={`w-full text-left px-3 py-1.5 text-xs rounded hover:bg-accent ${!note.folder ? "text-primary font-medium" : "text-foreground"}`}
-              >
-                No folder
-              </button>
-              {folders.map((f) => (
-                <button
-                  key={f}
-                  onClick={() => { moveNoteToFolder(noteId, f); setShowFolderMenu(false); }}
-                  className={`w-full text-left px-3 py-1.5 text-xs rounded hover:bg-accent ${note.folder === f ? "text-primary font-medium" : "text-foreground"}`}
-                >
-                  📁 {f}
-                </button>
-              ))}
-            </div>
-          )}
+          {showFolderMenu && (() => {
+            const defaultFolder = note.isKanban ? "tasks" : "notes";
+            const currentFolder = note.folder && note.folder.trim().length > 0 ? note.folder : defaultFolder;
+            const options = [defaultFolder, ...userFolders];
+            return (
+              <div className="absolute right-0 top-9 z-50 w-48 rounded-lg border border-border bg-popover p-1 shadow-lg">
+                {options.map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => { moveNoteToFolder(noteId, f); setShowFolderMenu(false); }}
+                    className={`w-full text-left px-3 py-1.5 text-xs rounded hover:bg-accent ${currentFolder === f ? "text-primary font-medium" : "text-foreground"}`}
+                  >
+                    📁 {f}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
         </div>
         <Button
           variant="ghost"

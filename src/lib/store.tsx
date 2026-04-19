@@ -1,16 +1,21 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import { Note, KanbanColumn, DEFAULT_COLUMNS, ViewMode } from "./types";
+import { isReservedFolder, defaultFolderFor } from "./constants";
 import { loadAgentNotes, saveAgentNotes } from "./crypto";
+import { toast } from "@/hooks/use-toast";
 import {
   createWorkspaceFolder,
   deleteWorkspaceNote,
   isTauriRuntimeAvailable,
   loadWorkspaceSnapshot,
   onNoteIndexingProgress,
+  PHASE_0_FEATURE_FLAGS,
   type NoteIndexingProgressEvent,
   saveWorkspaceNote,
   saveWorkspaceColumn,
   fallbackPassphraseUnlock,
+  getFeatureFlags,
+  type FeatureFlags,
 } from "./commands";
 
 interface StoreContextType {
@@ -18,6 +23,7 @@ interface StoreContextType {
   agentNotes: Note[];
   columns: KanbanColumn[];
   folders: string[];
+  userFolders: string[];
   activeView: ViewMode;
   selectedNoteId: string | null;
   isHydrating: boolean;
@@ -63,6 +69,7 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [isHydrating, setIsHydrating] = useState(false);
   const [indexingStatus, setIndexingStatus] = useState<NoteIndexingProgressEvent>(DEFAULT_INDEXING_STATUS);
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlags>(PHASE_0_FEATURE_FLAGS);
   const [noteSaveState, setNoteSaveState] = useState<Record<string, "idle" | "saving" | "saved" | "error">>({});
   const persistTimersRef = useRef<Map<string, number>>(new Map());
 
@@ -70,6 +77,31 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
     return () => {
       persistTimersRef.current.forEach((timer) => window.clearTimeout(timer));
       persistTimersRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntimeAvailable()) {
+      setFeatureFlags(PHASE_0_FEATURE_FLAGS);
+      return;
+    }
+
+    let cancelled = false;
+
+    void getFeatureFlags()
+      .then((flags) => {
+        if (!cancelled) {
+          setFeatureFlags(flags);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFeatureFlags(PHASE_0_FEATURE_FLAGS);
+        }
+      });
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -122,10 +154,6 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
         });
         const mergedFolders = [...snapshot.folders].sort((a, b) => a.localeCompare(b));
 
-        for (const folder of mergedFolders) {
-          await createWorkspaceFolder(folder);
-        }
-
         // Handle columns: seed DEFAULT_COLUMNS on first launch if backend is empty
         let columnsToUse = snapshot.columns;
         if (snapshot.columns.length === 0) {
@@ -174,6 +202,7 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
 
   const persistNote = useCallback((note: Note, debounceMs = 0) => {
     if (!isTauriRuntimeAvailable()) {
+      console.error(`[persistNote] Tauri not available — note ${note.id} will not be saved`);
       return;
     }
 
@@ -222,12 +251,15 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
       title: seed.title || "Untitled",
       content: seed.content ?? kanbanTemplate,
       tags: seed.tags || [],
-      column: seed.column || column,
+      status: seed.status || column,
       position: seed.position ?? Date.now(),
       isKanban: seed.isKanban ?? isKanban,
       createdAt: seed.createdAt || now,
       updatedAt: seed.updatedAt || now,
-      folder: seed.folder,
+      folder:
+        seed.folder && seed.folder.trim().length > 0
+          ? seed.folder
+          : defaultFolderFor(seed.isKanban ?? isKanban),
       isEncrypted: seed.isEncrypted,
     };
     setNotes((prev) => [note, ...prev]);
@@ -237,11 +269,12 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
   }, [persistNote]);
 
   const updateNote = useCallback((id: string, updates: Partial<Note>) => {
+    const updatedAt = new Date().toISOString();
     let nextNote: Note | null = null;
     setNotes((prev) =>
       prev.map((n) => {
         if (n.id !== id) return n;
-        nextNote = { ...n, ...updates, updatedAt: new Date().toISOString() };
+        nextNote = { ...n, ...updates, updatedAt };
         return nextNote;
       })
     );
@@ -273,16 +306,21 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
   }, [notes]);
 
   const moveNote = useCallback((id: string, column: string, position: number) => {
-    let nextNote: Note | null = null;
+    const updatedAt = new Date().toISOString();
+    let moved: Note | null = null;
+
     setNotes((prev) =>
       prev.map((n) => {
         if (n.id !== id) return n;
-        nextNote = { ...n, column, position, updatedAt: new Date().toISOString() };
-        return nextNote;
+        moved = { ...n, status: column, position, updatedAt };
+        return moved;
       })
     );
-    if (nextNote) {
-      persistNote(nextNote);
+
+    if (moved) {
+      persistNote(moved);
+    } else {
+      console.error(`[moveNote] note ${id} not found in state`);
     }
   }, [persistNote]);
 
@@ -297,7 +335,7 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
       title: partial.title || "Agent Note",
       content: partial.content || "",
       tags: partial.tags || ["agent"],
-      column: "agent",
+      status: "agent",
       position: Date.now(),
       isKanban: false,
       createdAt: now,
@@ -310,23 +348,39 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
   const getAgentNotes = useCallback(() => agentNotes, [agentNotes]);
 
   const addFolder = useCallback((name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (isReservedFolder(trimmed)) {
+      toast({
+        title: "Reserved folder name",
+        description: `"${trimmed}" is reserved and cannot be used as a folder name.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setFolders((prev) => {
-      if (prev.includes(name)) return prev;
+      if (prev.includes(trimmed)) return prev;
       if (isTauriRuntimeAvailable()) {
-        void createWorkspaceFolder(name).catch((error) => {
-          console.error(`Failed to create folder ${name}:`, error);
+        void createWorkspaceFolder(trimmed).catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          toast({
+            title: "Could not create folder",
+            description: message,
+            variant: "destructive",
+          });
         });
       }
-      return [...prev, name];
+      return [...prev, trimmed];
     });
   }, []);
 
   const moveNoteToFolder = useCallback((noteId: string, folder: string) => {
+    const updatedAt = new Date().toISOString();
     let nextNote: Note | null = null;
     setNotes((prev) =>
       prev.map((n) => {
         if (n.id !== noteId) return n;
-        nextNote = { ...n, folder, updatedAt: new Date().toISOString() };
+        nextNote = { ...n, folder, updatedAt };
         return nextNote;
       })
     );
@@ -337,6 +391,7 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
 
   const toggleNoteEncryption = useCallback((noteId: string) => {
     if (!isTauriRuntimeAvailable()) return;
+    if (!featureFlags.encryption_enabled) return;
 
     const current = notes.find((n) => n.id === noteId);
     if (!current) return;
@@ -362,7 +417,7 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
           window.dispatchEvent(new CustomEvent("vibo:vault-locked"));
         }
       });
-  }, [notes, saveWorkspaceNote]);
+  }, [featureFlags.encryption_enabled, notes, saveWorkspaceNote]);
 
   const getNoteSaveState = useCallback((noteId: string) => {
     if (noteSaveState[noteId]) {
@@ -378,6 +433,7 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
         agentNotes,
         columns,
         folders,
+        userFolders: folders.filter((f) => !isReservedFolder(f)),
         activeView,
         selectedNoteId,
         isHydrating,

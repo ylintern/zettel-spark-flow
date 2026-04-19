@@ -8,7 +8,13 @@ import { CloudProvidersSection } from "@/components/settings/CloudProvidersSecti
 import { BiometricsSection } from "@/components/settings/BiometricsSection";
 import { SafeVaultResetSection } from "@/components/settings/SafeVaultResetSection";
 import { invoke } from "@tauri-apps/api/core";
-import { exportNotes as exportNotesCmd, isTauriRuntimeAvailable } from "@/lib/commands";
+import {
+  exportNotes as exportNotesCmd,
+  getFeatureFlags,
+  isTauriRuntimeAvailable,
+  PHASE_0_FEATURE_FLAGS,
+  type FeatureFlags,
+} from "@/lib/commands";
 
 const TOR_TOGGLE_KEY = "zettel-tor-enabled";
 
@@ -17,6 +23,7 @@ export function SettingsView() {
   const [dark, setDark] = useState(() => (localStorage.getItem("vibo_theme") ?? "dark") === "dark");
   const [torEnabled, setTorEnabled] = useState(() => localStorage.getItem(TOR_TOGGLE_KEY) === "true");
   const [hasPin, setHasPin] = useState(false);
+  const [flags, setFlags] = useState<FeatureFlags>(PHASE_0_FEATURE_FLAGS);
 
   // Pass/PIN reset form state
   const [showResetForm, setShowResetForm] = useState(false);
@@ -39,6 +46,34 @@ export function SettingsView() {
   useEffect(() => {
     localStorage.setItem(TOR_TOGGLE_KEY, String(torEnabled));
   }, [torEnabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadFlags() {
+      if (!isTauriRuntimeAvailable()) {
+        setFlags(PHASE_0_FEATURE_FLAGS);
+        return;
+      }
+
+      try {
+        const resolvedFlags = await getFeatureFlags();
+        if (!cancelled) {
+          setFlags(resolvedFlags);
+        }
+      } catch {
+        if (!cancelled) {
+          setFlags(PHASE_0_FEATURE_FLAGS);
+        }
+      }
+    }
+
+    void loadFlags();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleResetPassphrase = async () => {
     setResetError(null);
@@ -133,89 +168,93 @@ export function SettingsView() {
           </button>
         </div>
 
-        {/* Encryption */}
-        <div className="card-3d rounded-2xl p-4">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
-            <Shield className="h-3.5 w-3.5" />
-            Encryption
-          </h2>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between py-1">
-              <div>
-                <div className="text-sm font-medium text-foreground">AES-256-GCM</div>
-                <div className="text-[10px] text-muted-foreground">App lock/unlock with PASS/PIN</div>
-              </div>
-              <div className={`flex items-center gap-1.5 text-xs font-medium ${hasPin ? "text-primary" : "text-muted-foreground"}`}>
-                <div className={`h-2 w-2 rounded-full ${hasPin ? "bg-primary" : "bg-muted-foreground/40"}`} />
-                {hasPin ? "Active" : "Not Set"}
+        {flags.encryption_enabled && (
+          <>
+            {/* Encryption */}
+            <div className="card-3d rounded-2xl p-4">
+              <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+                <Shield className="h-3.5 w-3.5" />
+                Encryption
+              </h2>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between py-1">
+                  <div>
+                    <div className="text-sm font-medium text-foreground">AES-256-GCM</div>
+                    <div className="text-[10px] text-muted-foreground">App lock/unlock with PASS/PIN</div>
+                  </div>
+                  <div className={`flex items-center gap-1.5 text-xs font-medium ${hasPin ? "text-primary" : "text-muted-foreground"}`}>
+                    <div className={`h-2 w-2 rounded-full ${hasPin ? "bg-primary" : "bg-muted-foreground/40"}`} />
+                    {hasPin ? "Active" : "Not Set"}
+                  </div>
+                </div>
+
+                {hasPin && !showResetForm && (
+                  <button
+                    onClick={() => { setShowResetForm(true); setResetError(null); setResetSuccess(false); }}
+                    className="w-full flex items-center gap-2 py-2 text-sm text-foreground/70 hover:text-foreground transition-colors"
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    Reset Pass / PIN
+                  </button>
+                )}
+
+                {showResetForm && (
+                  <div className="space-y-2 pt-1">
+                    {resetSuccess ? (
+                      <p className="text-xs text-primary font-medium py-1">Passphrase updated successfully.</p>
+                    ) : (
+                      <>
+                        <input
+                          type="password"
+                          placeholder="Current passphrase"
+                          value={resetCurrent}
+                          onChange={e => setResetCurrent(e.target.value)}
+                          className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <input
+                          type="password"
+                          placeholder="New passphrase"
+                          value={resetNew}
+                          onChange={e => setResetNew(e.target.value)}
+                          className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <input
+                          type="password"
+                          placeholder="Confirm new passphrase"
+                          value={resetConfirm}
+                          onChange={e => setResetConfirm(e.target.value)}
+                          className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        {resetError && (
+                          <p className="text-xs text-destructive">{resetError}</p>
+                        )}
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={handleResetPassphrase}
+                            disabled={resetLoading}
+                            className="flex-1 rounded-lg bg-primary text-primary-foreground text-sm py-2 font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                          >
+                            {resetLoading ? "Updating…" : "Update"}
+                          </button>
+                          <button
+                            onClick={() => { setShowResetForm(false); setResetError(null); setResetCurrent(""); setResetNew(""); setResetConfirm(""); }}
+                            disabled={resetLoading}
+                            className="flex-1 rounded-lg border border-border text-sm py-2 text-foreground hover:bg-muted/40 transition-colors disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
-            {hasPin && !showResetForm && (
-              <button
-                onClick={() => { setShowResetForm(true); setResetError(null); setResetSuccess(false); }}
-                className="w-full flex items-center gap-2 py-2 text-sm text-foreground/70 hover:text-foreground transition-colors"
-              >
-                <KeyRound className="h-4 w-4" />
-                Reset Pass / PIN
-              </button>
-            )}
-
-            {showResetForm && (
-              <div className="space-y-2 pt-1">
-                {resetSuccess ? (
-                  <p className="text-xs text-primary font-medium py-1">Passphrase updated successfully.</p>
-                ) : (
-                  <>
-                    <input
-                      type="password"
-                      placeholder="Current passphrase"
-                      value={resetCurrent}
-                      onChange={e => setResetCurrent(e.target.value)}
-                      className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                    <input
-                      type="password"
-                      placeholder="New passphrase"
-                      value={resetNew}
-                      onChange={e => setResetNew(e.target.value)}
-                      className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                    <input
-                      type="password"
-                      placeholder="Confirm new passphrase"
-                      value={resetConfirm}
-                      onChange={e => setResetConfirm(e.target.value)}
-                      className="w-full rounded-lg bg-background border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                    {resetError && (
-                      <p className="text-xs text-destructive">{resetError}</p>
-                    )}
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        onClick={handleResetPassphrase}
-                        disabled={resetLoading}
-                        className="flex-1 rounded-lg bg-primary text-primary-foreground text-sm py-2 font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-                      >
-                        {resetLoading ? "Updating…" : "Update"}
-                      </button>
-                      <button
-                        onClick={() => { setShowResetForm(false); setResetError(null); setResetCurrent(""); setResetNew(""); setResetConfirm(""); }}
-                        disabled={resetLoading}
-                        className="flex-1 rounded-lg border border-border text-sm py-2 text-foreground hover:bg-muted/40 transition-colors disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Biometrics (Mobile only) */}
-        <BiometricsSection />
+            {/* Biometrics (Mobile only) */}
+            <BiometricsSection />
+          </>
+        )}
 
         {/* Local Models */}
         <LocalModelsSection />
@@ -241,8 +280,12 @@ export function SettingsView() {
           </div>
         </div>
 
-        {/* Safe Vault Reset */}
-        <SafeVaultResetSection />
+        {flags.encryption_enabled && (
+          <>
+            {/* Safe Vault Reset */}
+            <SafeVaultResetSection />
+          </>
+        )}
 
         {/* Stats */}
         <div className="card-3d rounded-2xl p-4">

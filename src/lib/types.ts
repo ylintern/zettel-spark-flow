@@ -3,7 +3,7 @@ export interface Note {
   title: string;
   content: string;
   tags: string[];
-  column: string;
+  status: string;
   position: number;
   isKanban: boolean;
   createdAt: string;
