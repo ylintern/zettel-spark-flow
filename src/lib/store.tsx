@@ -60,6 +60,8 @@ interface StoreProviderProps {
 
 export function StoreProvider({ children, pin, initialNotes }: StoreProviderProps) {
   const [notes, setNotes] = useState<Note[]>(initialNotes);
+  const notesRef = useRef<Note[]>(initialNotes);
+  useEffect(() => { notesRef.current = notes; }, [notes]);
   const [agentNotes, setAgentNotes] = useState<Note[]>(() => {
     try { return JSON.parse(loadAgentNotes()); } catch { return []; }
   });
@@ -269,19 +271,11 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
   }, [persistNote]);
 
   const updateNote = useCallback((id: string, updates: Partial<Note>) => {
-    const updatedAt = new Date().toISOString();
-    let nextNote: Note | null = null;
-    setNotes((prev) =>
-      prev.map((n) => {
-        if (n.id !== id) return n;
-        nextNote = { ...n, ...updates, updatedAt };
-        return nextNote;
-      })
-    );
-
-    if (nextNote) {
-      persistNote(nextNote, 350);
-    }
+    const current = notesRef.current.find((n) => n.id === id);
+    if (!current) return;
+    const nextNote: Note = { ...current, ...updates, updatedAt: new Date().toISOString() };
+    setNotes((prev) => prev.map((n) => (n.id === id ? nextNote : n)));
+    persistNote(nextNote, 350);
   }, [persistNote]);
 
   const deleteNote = useCallback((id: string) => {
@@ -306,22 +300,19 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
   }, [notes]);
 
   const moveNote = useCallback((id: string, column: string, position: number) => {
-    const updatedAt = new Date().toISOString();
-    let moved: Note | null = null;
-
-    setNotes((prev) =>
-      prev.map((n) => {
-        if (n.id !== id) return n;
-        moved = { ...n, status: column, position, updatedAt };
-        return moved;
-      })
-    );
-
-    if (moved) {
-      persistNote(moved);
-    } else {
+    const current = notesRef.current.find((n) => n.id === id);
+    if (!current) {
       console.error(`[moveNote] note ${id} not found in state`);
+      return;
     }
+    const moved: Note = {
+      ...current,
+      status: column,
+      position,
+      updatedAt: new Date().toISOString(),
+    };
+    setNotes((prev) => prev.map((n) => (n.id === id ? moved : n)));
+    persistNote(moved);
   }, [persistNote]);
 
   const selectNote = useCallback((id: string | null) => {
@@ -375,18 +366,11 @@ export function StoreProvider({ children, pin, initialNotes }: StoreProviderProp
   }, []);
 
   const moveNoteToFolder = useCallback((noteId: string, folder: string) => {
-    const updatedAt = new Date().toISOString();
-    let nextNote: Note | null = null;
-    setNotes((prev) =>
-      prev.map((n) => {
-        if (n.id !== noteId) return n;
-        nextNote = { ...n, folder, updatedAt };
-        return nextNote;
-      })
-    );
-    if (nextNote) {
-      persistNote(nextNote);
-    }
+    const current = notesRef.current.find((n) => n.id === noteId);
+    if (!current) return;
+    const nextNote: Note = { ...current, folder, updatedAt: new Date().toISOString() };
+    setNotes((prev) => prev.map((n) => (n.id === noteId ? nextNote : n)));
+    persistNote(nextNote);
   }, [persistNote]);
 
   const toggleNoteEncryption = useCallback((noteId: string) => {
