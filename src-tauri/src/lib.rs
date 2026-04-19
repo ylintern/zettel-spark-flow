@@ -51,24 +51,6 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|app| {
-            // One-time migration: move data from old bundle path to new bundle path
-            let old_data_dir = app
-                .path()
-                .app_local_data_dir()
-                .map(|p| p.parent().unwrap_or(&p).join("com.vibo.zettel-spark-flow"))
-                .ok();
-            let new_data_dir = app
-                .path()
-                .app_local_data_dir()
-                .expect("failed to resolve app local data dir");
-
-            if let Some(old) = old_data_dir {
-                if old.exists() && !new_data_dir.exists() {
-                    fs::rename(&old, &new_data_dir)
-                        .unwrap_or_else(|e| eprintln!("[vibo] migration failed: {}", e));
-                }
-            }
-
             let app_data_dir = app
                 .path()
                 .app_local_data_dir()

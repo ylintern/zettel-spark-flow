@@ -16,7 +16,7 @@ import {
   type FeatureFlags,
 } from "@/lib/commands";
 
-const TOR_TOGGLE_KEY = "zettel-tor-enabled";
+const TOR_TOGGLE_KEY = "vibo-tor-enabled";
 
 export function SettingsView() {
   const { notes } = useStore();

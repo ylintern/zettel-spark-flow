@@ -53,7 +53,7 @@ const AUTH_METHODS = [
   { id: "passphrase" as const, nm: "Passphrase", ds: "Word-based password", icon: Shield },
 ];
 
-const TOR_KEY = "zettel-tor-enabled";
+const TOR_KEY = "vibo-tor-enabled";
 
 const DEFAULT_DEVICE_CAPABILITIES: DeviceCapabilities = {
   platform: "web",
@@ -577,8 +577,8 @@ function NameStep({ onComplete, onBack }: { onComplete: (name: string) => void; 
   );
 }
 
-const ONBOARDING_KEY = "zettel-onboarding-done";
-const AI_CONFIG_KEY = "zettel-ai-config";
+const ONBOARDING_KEY = "vibo-onboarding-done";
+const AI_CONFIG_KEY = "vibo-ai-config";
 
 export function isOnboardingDone(): boolean {
   return localStorage.getItem(ONBOARDING_KEY) === "true";

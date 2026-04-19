@@ -32,7 +32,7 @@ export async function lockVault(): Promise<void> {
 }
 
 // Agent notes are stored separately, unencrypted (agents always have access)
-const AGENT_NOTES_KEY = "zettel-agent-notes";
+const AGENT_NOTES_KEY = "vibo-agent-notes";
 
 export function loadAgentNotes(): string {
   return localStorage.getItem(AGENT_NOTES_KEY) || "[]";

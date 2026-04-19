@@ -46,11 +46,14 @@ export function SafeVaultResetSection() {
 
       // Clear all known localStorage keys to fully reset all storage layers
       const VIBO_LEGACY_KEYS = [
-        // Legacy zettel-* namespace (older installs)
+        // Legacy zettel-* namespace (older installs — defensive purge)
         "zettel-notes",
         "zettel-columns",
         "zettel-encrypted-notes",
         "zettel-agent-notes",
+        "zettel-onboarding-done",
+        "zettel-ai-config",
+        "zettel-tor-enabled",
         // Current vibo-* namespace
         "vibo-notes",
         "vibo-columns",
@@ -58,6 +61,9 @@ export function SafeVaultResetSection() {
         "vibo-pin",
         "vibo-salt",
         "vibo-agent-notes",
+        "vibo-onboarding-done",
+        "vibo-ai-config",
+        "vibo-tor-enabled",
       ];
       VIBO_LEGACY_KEYS.forEach((key) => localStorage.removeItem(key));
 

@@ -23,6 +23,7 @@ import {
   type FeatureFlags,
 } from "@/lib/commands";
 import { deriveVaultPhase, type VaultPhase, type VaultStatus } from "@/lib/vaultPhase";
+import { isReservedFolder } from "@/lib/constants";
 import { Plus, MessageCircle, X, SquarePlus } from "lucide-react";
 import logo from "@/assets/logo.svg";
 import type { Note } from "@/lib/types";
@@ -229,9 +230,9 @@ const Index = () => {
               const snap = await loadWorkspaceSnapshot();
               const hasData =
                 (snap.notes?.length ?? 0) > 0 ||
-                (snap.folders?.length ?? 0) > 0;
+                (snap.folders?.filter((f) => !isReservedFolder(f)).length ?? 0) > 0;
               if (hasData) {
-                localStorage.setItem("zettel-onboarding-done", "true");
+                localStorage.setItem("vibo-onboarding-done", "true");
               }
             } catch {
               // Snapshot unavailable — fall back to wizard.
