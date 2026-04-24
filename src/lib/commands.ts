@@ -165,6 +165,35 @@ export async function factoryReset(): Promise<void> {
   return tauriInvoke<void>("factory_reset");
 }
 
+export interface OnboardingStateDTO {
+  userName: string;
+  tone: string;
+  localModel: string;
+  cloudFallback: string;
+  integrations: string[];
+  authMethod: string;
+  cloudProviders: string[];
+  torEnabled: boolean;
+}
+
+export async function readOnboarding(): Promise<OnboardingStateDTO | null> {
+  if (!isTauriRuntimeAvailable()) return null;
+  return tauriInvoke<OnboardingStateDTO | null>("read_onboarding");
+}
+
+export async function writeOnboarding(config: OnboardingStateDTO): Promise<void> {
+  return tauriInvoke<void>("write_onboarding", { config });
+}
+
+export async function resetOnboarding(): Promise<void> {
+  return tauriInvoke<void>("reset_onboarding");
+}
+
+export async function isOnboardingComplete(): Promise<boolean> {
+  if (!isTauriRuntimeAvailable()) return false;
+  return tauriInvoke<boolean>("is_onboarding_complete");
+}
+
 export async function getDeviceCapabilities(): Promise<DeviceCapabilities> {
   return tauriInvoke<DeviceCapabilities>("get_device_capabilities");
 }
@@ -186,6 +215,21 @@ export async function fallbackPassphraseUnlock(passphrase: string): Promise<void
  */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
   return tauriInvoke<FeatureFlags>("get_feature_flags");
+}
+
+/**
+ * Non-destructive passphrase verification.
+ *
+ * Returns `true` if the passphrase opens the current vault snapshot, `false`
+ * otherwise. Does NOT mutate the vault session or disk. Use this for
+ * "confirm identity before destructive action" flows (e.g. Reset Onboarding).
+ *
+ * Replaces the previous misuse of `reset_passphrase` with a garbage new value
+ * as a "verify-only" mechanism — that approach was destructive (it deleted +
+ * recreated the vault with the garbage passphrase, bricking unlock).
+ */
+export async function verifyVaultPassphrase(passphrase: string): Promise<boolean> {
+  return tauriInvoke<boolean>("verify_vault_passphrase", { passphrase });
 }
 
 async function subscribeToEvent<T>(

@@ -53,10 +53,20 @@ impl FeatureFlags {
             ios_enabled: false,
         }
     }
+
+    /// Phase 2 activation: stronghold unlock + AES-256-GCM note encryption ON.
+    /// Biometric stays off (mobile-only, Phase 3). iOS deferred.
+    pub const fn phase_2() -> Self {
+        Self {
+            encryption_enabled: true,
+            biometric_enabled: false,
+            ios_enabled: false,
+        }
+    }
 }
 
-/// Global feature flag instance. Phase 0 configuration.
-pub const FLAGS: FeatureFlags = FeatureFlags::phase_0();
+/// Global feature flag instance. Phase 2: encryption ACTIVE.
+pub const FLAGS: FeatureFlags = FeatureFlags::phase_2();
 
 /// Tauri command: expose feature flags to the TSX frontend.
 ///
@@ -80,8 +90,8 @@ mod tests {
     }
 
     #[test]
-    fn const_flags_match_phase_0() {
-        assert_eq!(FLAGS.encryption_enabled, false);
+    fn const_flags_match_phase_2() {
+        assert_eq!(FLAGS.encryption_enabled, true);
         assert_eq!(FLAGS.biometric_enabled, false);
         assert_eq!(FLAGS.ios_enabled, false);
     }

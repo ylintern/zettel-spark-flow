@@ -9,21 +9,23 @@ import { ChatAssistant } from "@/components/ChatAssistant";
 import { BottomNav } from "@/components/BottomNav";
 import { NewNoteDialog } from "@/components/NewNoteDialog";
 import { LockScreen } from "@/components/LockScreen";
-import { OnboardingWizard, isOnboardingDone } from "@/components/OnboardingWizard";
+import { OnboardingWizard, hydrateOnboardingCache } from "@/components/OnboardingWizard";
 import type { OnboardingConfig } from "@/components/OnboardingWizard";
 import { StoreProvider, useStore } from "@/lib/store";
 import {
   getFeatureFlags,
+  isOnboardingComplete,
   isTauriRuntimeAvailable,
   isVaultConfigured,
   isVaultUnlocked,
-  loadWorkspaceSnapshot,
+  lockSecureVault,
   onVaultStatusChanged,
   PHASE_0_FEATURE_FLAGS,
+  readOnboarding,
+  setupSecureVault,
   type FeatureFlags,
 } from "@/lib/commands";
 import { deriveVaultPhase, type VaultPhase, type VaultStatus } from "@/lib/vaultPhase";
-import { isReservedFolder } from "@/lib/constants";
 import { Plus, MessageCircle, X, SquarePlus } from "lucide-react";
 import logo from "@/assets/logo.svg";
 import type { Note } from "@/lib/types";
@@ -200,12 +202,9 @@ const Index = () => {
 
   useEffect(() => {
     if (!isTauriRuntimeAvailable()) {
-      // Web preview has no Rust backend — fall back to Phase 0 defaults
-      // (encryption dormant) and advance directly to the app once the user
-      // has completed the onboarding wizard.
       setFlags(PHASE_0_FEATURE_FLAGS);
       setFlagsReady(true);
-      setPhase(isOnboardingDone() ? "app" : "onboarding");
+      setPhase("onboarding");
       return;
     }
 
@@ -218,31 +217,35 @@ const Index = () => {
         setFlags(resolvedFlags);
         setFlagsReady(true);
 
-        // Phase 0 path: encryption dormant. Vault configuration/unlock state
-        // is irrelevant — skip the LockScreen entirely. OnboardingWizard still
-        // runs on first launch for non-encryption UX (name, model, cloud keys).
+        // File-based onboarding check. viboai/onboarding.json presence = done.
+        // No heuristic, no silent-reuse. Delete file → wizard runs.
+        const onboardingConfig = await readOnboarding();
+        hydrateOnboardingCache(onboardingConfig);
+        const onboardingDone = onboardingConfig !== null;
+
         if (!resolvedFlags.encryption_enabled) {
-          // Silent reuse: if the vault already contains notes/tasks/folders,
-          // treat onboarding as complete even if localStorage was cleared
-          // (e.g. bundle-identifier swap wiping the WebKit origin).
-          if (!isOnboardingDone()) {
-            try {
-              const snap = await loadWorkspaceSnapshot();
-              const hasData =
-                (snap.notes?.length ?? 0) > 0 ||
-                (snap.folders?.filter((f) => !isReservedFolder(f)).length ?? 0) > 0;
-              if (hasData) {
-                localStorage.setItem("vibo-onboarding-done", "true");
-              }
-            } catch {
-              // Snapshot unavailable — fall back to wizard.
-            }
-          }
-          setPhase(isOnboardingDone() ? "app" : "onboarding");
+          if (!cancelled) setPhase(onboardingDone ? "app" : "onboarding");
+          return;
+        }
+
+        if (!onboardingDone) {
+          if (!cancelled) setPhase("onboarding");
           return;
         }
 
         // Phase 2/3 path: encryption active — original behavior preserved.
+        // SECURITY: Tauri WebView reload (⌘R) restarts the frontend but leaves
+        // the Rust backend (and `SecurityState.session`) alive — so a page
+        // reload would otherwise skip LockScreen and land in the app unlocked.
+        // Force-lock on every Index mount closes that bypass. On a true fresh
+        // launch the session is already empty so this is a no-op.
+        try {
+          await lockSecureVault();
+        } catch {
+          // Lock failures shouldn't block phase routing; fall through to the
+          // unlocked/configured check which will surface the real state.
+        }
+
         const [configured, unlocked] = await Promise.all([
           isVaultConfigured(),
           isVaultUnlocked(),
@@ -250,7 +253,10 @@ const Index = () => {
         if (!cancelled) {
           setPhase(deriveVaultPhase({ configured, unlocked }));
         }
-      } catch {
+      } catch (err) {
+        // Surface the real error so DevTools shows what broke instead of a
+        // silent fallback to the onboarding wizard obscuring the root cause.
+        console.error("[syncPhase] unexpected error, falling back to onboarding:", err);
         if (!cancelled) {
           setFlags(PHASE_0_FEATURE_FLAGS);
           setFlagsReady(true);
@@ -300,14 +306,29 @@ const Index = () => {
     };
   }, [flags.encryption_enabled]);
 
-  const handleOnboardingComplete = (_config: OnboardingConfig) => {
-    // Phase 0 (encryption dormant): skip LockScreen, go straight to workspace.
-    // Phase 2/3 (encryption active): original flow — user must set passphrase
-    // via the vault unlock screen next.
-    const shouldRequireLock = flagsReady
+  const handleOnboardingComplete = async (_config: OnboardingConfig, credential: string) => {
+    // Encryption ON: create the vault now with the credential captured in the
+    // CredentialSetupStep, then go straight to "app" (vault just unlocked).
+    // Next launch: vault configured + locked → phase router flips to "lock".
+    // Encryption OFF (Phase 0): skip vault entirely.
+    const encryptionOn = flagsReady
       ? flags.encryption_enabled
       : isTauriRuntimeAvailable();
-    setPhase(shouldRequireLock ? "lock" : "app");
+
+    if (encryptionOn && credential) {
+      try {
+        setPin(credential);
+        await setupSecureVault(credential);
+        setPhase("app");
+        return;
+      } catch (e) {
+        console.error("[onboarding] setupSecureVault failed", e);
+        setPhase("lock");
+        return;
+      }
+    }
+
+    setPhase("app");
   };
 
   const handleUnlock = async (enteredPin: string) => {

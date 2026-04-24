@@ -1,15 +1,19 @@
 import { useState, useEffect } from "react";
-import { Shield, Fingerprint, Key, Cpu, Link, Calendar, Mail, ChevronLeft, ChevronRight, Globe, Eye, EyeOff, Cloud } from "lucide-react";
+import { Shield, ShieldCheck, Fingerprint, Key, Cpu, Link, Calendar, Mail, ChevronLeft, ChevronRight, Globe, Eye, EyeOff, Cloud } from "lucide-react";
 import { CLOUD_PROVIDERS, setCloudKey, type CloudProviderType } from "@/lib/models";
 import {
   getDeviceCapabilities,
   isTauriRuntimeAvailable,
+  writeOnboarding,
   type DeviceCapabilities,
 } from "@/lib/commands";
 import logo from "@/assets/logo.svg";
 
 interface OnboardingProps {
-  onComplete: (config: OnboardingConfig) => void;
+  // credential is the PIN/passphrase chosen in the new CredentialSetupStep.
+  // Never persisted to OnboardingConfig (would leak plaintext). Passed in-memory
+  // to Index.tsx which forwards it to setupSecureVault() when encryption is on.
+  onComplete: (config: OnboardingConfig, credential: string) => void;
 }
 
 export interface OnboardingConfig {
@@ -553,7 +557,7 @@ function CloudProviderStep({
 }
 
 // Step 6: Your Name
-function NameStep({ onComplete, onBack }: { onComplete: (name: string) => void; onBack: () => void }) {
+function NameStep({ onComplete, onBack, isSubmitting }: { onComplete: (name: string) => void; onBack: () => void; isSubmitting: boolean }) {
   const [name, setName] = useState("");
 
   return (
@@ -570,9 +574,26 @@ function NameStep({ onComplete, onBack }: { onComplete: (name: string) => void; 
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="Your name…"
-        className="w-full py-3 px-4 rounded-xl bg-muted border border-border text-center text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20 mb-5"
+        disabled={isSubmitting}
+        className="w-full py-3 px-4 rounded-xl bg-muted border border-border text-center text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20 mb-5 disabled:opacity-60"
       />
-      <NavArrows onBack={onBack} onNext={() => onComplete(name || "User")} nextLabel="Finish setup" />
+      <div className="flex items-center gap-3 w-full mt-1">
+        <button
+          onClick={onBack}
+          disabled={isSubmitting}
+          className="flex items-center justify-center h-12 w-12 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors shrink-0 disabled:opacity-50"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <button
+          onClick={() => onComplete(name || "User")}
+          disabled={isSubmitting}
+          className="flex-1 py-3.5 rounded-full bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-70"
+        >
+          {isSubmitting ? "Setting up encryption…" : "Finish setup"}
+          {!isSubmitting && <ChevronRight className="h-4 w-4" />}
+        </button>
+      </div>
     </div>
   );
 }
@@ -584,6 +605,19 @@ export function isOnboardingDone(): boolean {
   return localStorage.getItem(ONBOARDING_KEY) === "true";
 }
 
+// Populate (or clear) the localStorage cache from the file-based source of
+// truth. Called from Index.tsx once the Tauri `read_onboarding` result lands
+// so consumers using `isOnboardingDone()` / `getAiConfig()` stay consistent.
+export function hydrateOnboardingCache(config: OnboardingConfig | null): void {
+  if (!config) {
+    localStorage.removeItem(ONBOARDING_KEY);
+    localStorage.removeItem(AI_CONFIG_KEY);
+    return;
+  }
+  localStorage.setItem(ONBOARDING_KEY, "true");
+  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
+}
+
 export function getAiConfig(): OnboardingConfig {
   try {
     const raw = localStorage.getItem(AI_CONFIG_KEY);
@@ -593,15 +627,123 @@ export function getAiConfig(): OnboardingConfig {
   }
 }
 
+// Step 4b: Credential setup (PIN/passphrase) — mirrors LockScreen's setup mode.
+// Lives inside the wizard so the user sets the credential BEFORE finish(), and
+// Index.tsx can call setupSecureVault() immediately. Credential stays in memory
+// and is never written to OnboardingConfig / onboarding.json.
+function CredentialSetupStep({
+  authMethod,
+  onBack,
+  onDone,
+}: {
+  authMethod: "biometrics" | "pin" | "passphrase";
+  onBack: () => void;
+  onDone: (credential: string) => void;
+}) {
+  const [stage, setStage] = useState<"enter" | "confirm">("enter");
+  const [secret, setSecret] = useState("");
+  const [confirmSecret, setConfirmSecret] = useState("");
+  const [error, setError] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
+
+  const usesPassphrase = authMethod === "passphrase" || authMethod === "biometrics";
+  const label = usesPassphrase ? "passphrase" : "PIN";
+  const minLen = usesPassphrase ? 8 : 4;
+  const createCopy = usesPassphrase
+    ? "Create a passphrase to encrypt your notes at rest"
+    : "Create a PIN to encrypt your notes at rest";
+  const confirmCopy = usesPassphrase ? "Confirm your passphrase" : "Confirm your PIN";
+  const placeholder =
+    stage === "confirm"
+      ? usesPassphrase ? "Confirm passphrase..." : "Confirm PIN..."
+      : usesPassphrase ? "Enter passphrase..." : "Enter PIN...";
+
+  const handleNext = () => {
+    setError("");
+    if (stage === "enter") {
+      if (secret.trim().length < minLen) {
+        setError(usesPassphrase ? "Passphrase must be at least 8 characters" : "PIN must be at least 4 characters");
+        return;
+      }
+      setStage("confirm");
+      setConfirmSecret("");
+    } else {
+      if (confirmSecret !== secret) {
+        setError(usesPassphrase ? "Passphrases don't match. Try again." : "PINs don't match. Try again.");
+        setConfirmSecret("");
+        return;
+      }
+      onDone(secret);
+    }
+  };
+
+  return (
+    <div className="w-full max-w-[440px] mx-auto animate-[scaleIn_0.4s_ease_both] flex flex-col items-center">
+      <StepIndicator current={3} total={5} />
+      <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground mb-2 text-center">Step 4 of 5</p>
+      <div className="h-16 w-16 rounded-2xl bg-foreground/10 flex items-center justify-center mb-4">
+        <ShieldCheck className="h-8 w-8 text-foreground" />
+      </div>
+      <h2 className="text-2xl font-light text-foreground text-center mb-2 tracking-tight">Set Up Encryption</h2>
+      <p className="text-sm text-muted-foreground text-center mb-5">
+        {stage === "enter" ? createCopy : confirmCopy}
+      </p>
+      <div className="w-full space-y-3 mb-5">
+        <div className="relative">
+          <input
+            type={showSecret ? "text" : "password"}
+            value={stage === "confirm" ? confirmSecret : secret}
+            onChange={(e) => stage === "confirm" ? setConfirmSecret(e.target.value) : setSecret(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleNext(); }}
+            placeholder={placeholder}
+            className="w-full h-12 rounded-xl bg-muted border border-border px-4 pr-10 text-center text-lg tracking-[0.3em] font-mono text-foreground placeholder:text-muted-foreground placeholder:tracking-normal placeholder:text-sm focus:outline-none focus:ring-2 focus:ring-foreground/20"
+            autoFocus
+            inputMode={usesPassphrase ? "text" : "numeric"}
+          />
+          <button
+            type="button"
+            onClick={() => setShowSecret((s) => !s)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+        {error && <p className="text-xs text-destructive text-center">{error}</p>}
+        <button
+          onClick={handleNext}
+          className="w-full h-11 rounded-xl bg-foreground text-background font-medium text-sm hover:opacity-90 transition-opacity"
+        >
+          {stage === "enter" ? "Next" : "Enable Encryption"}
+        </button>
+      </div>
+      <p className="text-[10px] text-muted-foreground text-center max-w-[240px] mb-4">
+        Your {label} derives an AES-256 key to encrypt all notes locally
+      </p>
+      <button
+        onClick={stage === "enter" ? onBack : () => { setStage("enter"); setError(""); setConfirmSecret(""); }}
+        className="flex items-center justify-center h-10 w-10 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 export function OnboardingWizard({ onComplete }: OnboardingProps) {
-  const [step, setStep] = useState<"welcome" | "model" | "integrations" | "security" | "name">("welcome");
+  const [step, setStep] = useState<"welcome" | "model" | "integrations" | "security" | "credential" | "name">("welcome");
   const [model, setModel] = useState("instruct-pack");
   const [integrations, setIntegrations] = useState<string[]>([]);
   const [authMethod, setAuthMethod] = useState<"biometrics" | "pin" | "passphrase">("biometrics");
+  // Credential kept in memory only. Forwarded to onComplete(config, credential)
+  // so Index.tsx can call setupSecureVault(credential) when encryption_enabled.
+  const [credential, setCredential] = useState("");
   const [deviceCapabilities, setDeviceCapabilities] = useState<DeviceCapabilities>(DEFAULT_DEVICE_CAPABILITIES);
   const [enabledProviders, setEnabledProviders] = useState<string[]>([]);
   const [providerKeys, setProviderKeys] = useState<Record<string, string>>({});
   const [torEnabled, setTorEnabled] = useState(false);
+  // Locks the Finish button while writeOnboarding + setupSecureVault run
+  // (Stronghold key derivation is ~40–60s on dev builds — prevents double-submit).
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!isTauriRuntimeAvailable()) {
@@ -646,7 +788,10 @@ export function OnboardingWizard({ onComplete }: OnboardingProps) {
     setProviderKeys((p) => ({ ...p, [id]: key }));
   };
 
-  const finish = (name: string) => {
+  const finish = async (name: string) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
     // Persist cloud keys
     for (const id of enabledProviders) {
       if (providerKeys[id]) {
@@ -668,7 +813,28 @@ export function OnboardingWizard({ onComplete }: OnboardingProps) {
     };
     localStorage.setItem(ONBOARDING_KEY, "true");
     localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
-    onComplete(config);
+
+    // Persist onboarding to disk (viboai/onboarding.json). Without this, the
+    // file-based gate in Index.tsx sees no file on next launch → wizard re-runs.
+    if (isTauriRuntimeAvailable()) {
+      try {
+        await writeOnboarding({
+          userName: config.userName,
+          tone: config.tone,
+          localModel: config.localModel,
+          cloudFallback: config.cloudFallback,
+          integrations: config.integrations,
+          authMethod: config.authMethod,
+          cloudProviders: config.cloudProviders,
+          torEnabled: config.torEnabled,
+        });
+      } catch (e) {
+        console.error("[onboarding] writeOnboarding failed", e);
+      }
+    }
+
+    onComplete(config, credential);
+    // NOTE: don't reset isSubmitting — component unmounts on phase change.
   };
 
   return (
@@ -684,11 +850,18 @@ export function OnboardingWizard({ onComplete }: OnboardingProps) {
             methods={availableAuthMethods}
             capabilities={deviceCapabilities}
             onSelect={setAuthMethod}
-            onNext={() => setStep("name")}
+            onNext={() => setStep("credential")}
             onBack={() => setStep("integrations")}
           />
         )}
-        {step === "name" && <NameStep onComplete={finish} onBack={() => setStep("security")} />}
+        {step === "credential" && (
+          <CredentialSetupStep
+            authMethod={authMethod}
+            onBack={() => setStep("security")}
+            onDone={(secret) => { setCredential(secret); setStep("name"); }}
+          />
+        )}
+        {step === "name" && <NameStep onComplete={finish} onBack={() => setStep("credential")} isSubmitting={isSubmitting} />}
       </div>
     </div>
   );

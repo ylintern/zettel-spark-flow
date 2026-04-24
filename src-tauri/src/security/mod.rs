@@ -96,6 +96,40 @@ impl SecurityState {
         })?;
 
         log::info!("setup: vault setup complete, snapshot persisted");
+
+        // Clean up stale PARTI temp files left by previous interrupted saves.
+        // Stronghold writes `snapshot_path.HASH` temp files and renames them on
+        // success; orphans accumulate when a prior run was interrupted. We clean
+        // them here (after a verified successful save) so they don't pile up and
+        // potentially interfere with future save() calls.
+        if let (Some(parent), Some(stem)) = (
+            self.snapshot_path.parent(),
+            self.snapshot_path.file_name(),
+        ) {
+            let stem_str = stem.to_string_lossy();
+            if let Ok(entries) = std::fs::read_dir(parent) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if name_str.starts_with(stem_str.as_ref())
+                        && name_str.as_ref() != stem_str.as_ref()
+                    {
+                        match std::fs::remove_file(entry.path()) {
+                            Ok(()) => log::info!(
+                                "setup: cleaned stale temp file: {:?}",
+                                entry.path()
+                            ),
+                            Err(e) => log::warn!(
+                                "setup: could not remove temp file {:?}: {}",
+                                entry.path(),
+                                e
+                            ),
+                        }
+                    }
+                }
+            }
+        }
+
         *self.session.lock().unwrap() = Some(stronghold);
         Ok(())
     }
@@ -127,9 +161,14 @@ impl SecurityState {
     pub fn lock(&self) -> Result<(), SecurityError> {
         let mut session = self.session.lock().unwrap();
         if let Some(stronghold) = session.take() {
-            stronghold
-                .save()
-                .map_err(|err| SecurityError::Stronghold(err.to_string()))?;
+            // Best-effort save. The session is already dropped (vault IS locked regardless).
+            // A failed save on lock is non-fatal — the in-memory state is gone and the
+            // last on-disk snapshot remains valid. Log but do not propagate the error,
+            // otherwise lock_vault skips emit_vault_status and the frontend falls to its
+            // outer-catch "onboarding" fallback (the reload-while-unlocked → wizard bug).
+            if let Err(e) = stronghold.save() {
+                log::warn!("lock: save() failed (non-fatal, session dropped): {}", e);
+            }
         }
         Ok(())
     }
@@ -173,6 +212,24 @@ impl SecurityState {
         stronghold
             .save()
             .map_err(|err| SecurityError::Stronghold(err.to_string()))?;
+        Ok(())
+    }
+
+    /// Non-destructive passphrase verification.
+    /// Derives the key, loads the snapshot read-only via `Stronghold::new`, and
+    /// drops the instance. No session mutation, no disk write. Use this for any
+    /// "confirm identity" flow that must NOT side-effect the vault
+    /// (e.g. Reset Onboarding).
+    pub fn verify_passphrase(&self, passphrase: &str) -> Result<(), SecurityError> {
+        if !self.is_configured() {
+            return Err(SecurityError::VaultNotConfigured);
+        }
+        let key = derive_vault_key(passphrase);
+        // Stronghold::new loads the snapshot into an in-memory instance.
+        // Wrong key -> decryption fails -> Err. The instance is dropped on scope
+        // exit so self.session is untouched.
+        Stronghold::new(&self.snapshot_path, key)
+            .map_err(|_| SecurityError::InvalidPassphrase)?;
         Ok(())
     }
 
@@ -351,7 +408,7 @@ pub struct SecretValue {
     pub value: Option<String>,
 }
 
-fn emit_vault_status(
+pub(crate) fn emit_vault_status(
     app: &AppHandle,
     security: &SecurityState,
     reason: &str,
@@ -458,6 +515,25 @@ pub async fn factory_reset(app: AppHandle, state: State<'_, AppState>) -> Result
     state.replace_db(new_db);
 
     emit_vault_status(&app, &state.security, "factory-reset")
+}
+
+/// Non-destructive passphrase verification.
+///
+/// Returns `true` if the passphrase can unlock the current vault snapshot,
+/// `false` if it cannot. Never mutates the session or touches the disk.
+/// Use this for "confirm identity before destructive action" flows
+/// (e.g. Reset Onboarding) — it replaces the previous misuse of
+/// `reset_passphrase` as a verification mechanism, which was destructive.
+#[tauri::command]
+pub async fn verify_vault_passphrase(
+    passphrase: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    match state.security.verify_passphrase(&passphrase) {
+        Ok(()) => Ok(true),
+        Err(SecurityError::InvalidPassphrase) => Ok(false),
+        Err(err) => Err(err.to_string()),
+    }
 }
 
 #[tauri::command]

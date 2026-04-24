@@ -1,5 +1,5 @@
 import { useStore } from "@/lib/store";
-import { Moon, Sun, Trash2, Download, Shield, KeyRound } from "lucide-react";
+import { Moon, Sun, Trash2, Download, Shield, KeyRound, Lock } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState, useEffect } from "react";
 import { isPinSetup } from "@/lib/crypto";
@@ -7,11 +7,13 @@ import { LocalModelsSection } from "@/components/settings/LocalModelsSection";
 import { CloudProvidersSection } from "@/components/settings/CloudProvidersSection";
 import { BiometricsSection } from "@/components/settings/BiometricsSection";
 import { SafeVaultResetSection } from "@/components/settings/SafeVaultResetSection";
+import { ResetOnboardingSection } from "@/components/settings/ResetOnboardingSection";
 import { invoke } from "@tauri-apps/api/core";
 import {
   exportNotes as exportNotesCmd,
   getFeatureFlags,
   isTauriRuntimeAvailable,
+  lockSecureVault,
   PHASE_0_FEATURE_FLAGS,
   type FeatureFlags,
 } from "@/lib/commands";
@@ -189,13 +191,22 @@ export function SettingsView() {
                 </div>
 
                 {hasPin && !showResetForm && (
-                  <button
-                    onClick={() => { setShowResetForm(true); setResetError(null); setResetSuccess(false); }}
-                    className="w-full flex items-center gap-2 py-2 text-sm text-foreground/70 hover:text-foreground transition-colors"
-                  >
-                    <KeyRound className="h-4 w-4" />
-                    Reset Pass / PIN
-                  </button>
+                  <>
+                    <button
+                      onClick={() => { void lockSecureVault(); }}
+                      className="w-full flex items-center gap-2 py-2 text-sm text-foreground/70 hover:text-foreground transition-colors"
+                    >
+                      <Lock className="h-4 w-4" />
+                      Lock Vault
+                    </button>
+                    <button
+                      onClick={() => { setShowResetForm(true); setResetError(null); setResetSuccess(false); }}
+                      className="w-full flex items-center gap-2 py-2 text-sm text-foreground/70 hover:text-foreground transition-colors"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                      Reset Pass / PIN
+                    </button>
+                  </>
                 )}
 
                 {showResetForm && (
@@ -252,7 +263,10 @@ export function SettingsView() {
             </div>
 
             {/* Biometrics (Mobile only) */}
-            <BiometricsSection />
+            {/* <BiometricsSection /> */}
+
+            {/* Reset Onboarding */}
+            <ResetOnboardingSection hasPin={hasPin} />
           </>
         )}
 
