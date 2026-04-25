@@ -11,6 +11,7 @@
   "permissions": [
     "autostart:default",
     "clipboard-manager:default",
-    "global-shortcut:default"
+    "global-shortcut:default",
+    "leap-ai:default"
   ]
 }

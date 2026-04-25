@@ -1,7 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useStore } from "@/lib/store";
 import { Send, FileText, Columns3, Bot, User, Zap, ZapOff, ChevronDown } from "lucide-react";
-import { isLfmConfigured, streamLfmChat, getActiveProviderLabel, type LfmMessage } from "@/lib/lfm";
+import {
+  isLfmConfigured,
+  refreshLocalReady,
+  streamLfmChat,
+  getActiveProviderLabel,
+  type LfmMessage,
+} from "@/lib/lfm";
 import {
   CLOUD_PROVIDERS,
   getActiveProvider,
@@ -13,6 +19,16 @@ import {
   type ActiveProvider,
   type CloudProviderType,
 } from "@/lib/models";
+import {
+  endChatSession,
+  getActiveModel,
+  getSessionInfo,
+  listDownloaded,
+  listModels,
+  setActiveModel,
+  type ModelEntryDto,
+  type SessionInfo,
+} from "@/lib/inference";
 
 interface ChatMessage {
   id: string;
@@ -28,7 +44,19 @@ const GREETING: ChatMessage = {
 
 const sessionMessages = new Map<string, ChatMessage[]>();
 
-function ModelSwitcher() {
+interface ModelSwitcherProps {
+  localModels: ModelEntryDto[];
+  downloadedIds: Set<string>;
+  activeLocalId: string | null;
+  onLocalSelect: (id: string) => void;
+}
+
+function ModelSwitcher({
+  localModels,
+  downloadedIds,
+  activeLocalId,
+  onLocalSelect,
+}: ModelSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<ActiveProvider>(getActiveProvider);
   const [selModels, setSelModels] = useState(getSelectedModels);
@@ -45,11 +73,14 @@ function ModelSwitcher() {
   const availableProviders = CLOUD_PROVIDERS.filter((p) => keys[p.id]);
   const currentProvider = active === "local" ? null : CLOUD_PROVIDERS.find((p) => p.id === active);
   const currentModel = active !== "local" ? selModels[active as CloudProviderType] : "";
+  const localActive = localModels.find((m) => m.id === activeLocalId);
   const displayLabel = active === "local"
-    ? "Local LFM"
+    ? localActive ? `Local · ${localActive.alias}` : "Local LFM"
     : `${currentProvider?.name || active}${currentModel ? " / " + currentModel : ""}`;
 
-  const handleSelect = (provider: ActiveProvider, model?: string) => {
+  const downloadedLocal = localModels.filter((m) => downloadedIds.has(m.id));
+
+  const handleCloudSelect = (provider: ActiveProvider, model?: string) => {
     setActiveProvider(provider);
     setActive(provider);
     if (model && provider !== "local") {
@@ -59,26 +90,50 @@ function ModelSwitcher() {
     setOpen(false);
   };
 
+  const handleLocalRowClick = (id: string) => {
+    setActiveProvider("local");
+    setActive("local");
+    onLocalSelect(id);
+    setOpen(false);
+  };
+
   return (
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 text-[9px] font-mono text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded-md hover:bg-accent max-w-[140px]"
+        className="flex items-center gap-1 text-[9px] font-mono text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded-md hover:bg-accent max-w-[160px]"
       >
         {isLfmConfigured() ? <Zap className="h-2.5 w-2.5 text-primary shrink-0" /> : <ZapOff className="h-2.5 w-2.5 shrink-0" />}
         <span className="truncate">{displayLabel}</span>
         <ChevronDown className={`h-2.5 w-2.5 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute bottom-full right-0 mb-1 z-50 w-52 rounded-lg border border-border bg-card shadow-lg max-h-64 overflow-y-auto">
-          {/* Local LFM */}
+        <div className="absolute bottom-full right-0 mb-1 z-50 w-56 rounded-lg border border-border bg-card shadow-lg max-h-72 overflow-y-auto">
+          {/* Local LFM — dynamic list of downloaded models */}
           <div className="px-3 py-1.5 text-[9px] font-bold uppercase text-muted-foreground tracking-wider bg-muted/50">Local</div>
-          <button
-            onClick={() => handleSelect("local")}
-            className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors ${active === "local" ? "bg-primary/10 text-primary font-medium" : "text-foreground"}`}
-          >
-            LFM (On-Device)
-          </button>
+          {downloadedLocal.length === 0 ? (
+            <div className="px-3 py-2 text-[10px] text-muted-foreground">
+              Pull a model in Settings → Local Models
+            </div>
+          ) : (
+            downloadedLocal.map((m) => {
+              const isActive = active === "local" && activeLocalId === m.id;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => handleLocalRowClick(m.id)}
+                  className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors flex items-center justify-between gap-2 ${
+                    isActive ? "bg-primary/10 text-primary font-medium" : "text-foreground"
+                  }`}
+                >
+                  <span className="truncate">{m.name}</span>
+                  <span className="text-[9px] font-mono lowercase text-muted-foreground/80 px-1.5 py-0.5 rounded-md bg-muted/50 shrink-0">
+                    {m.alias}
+                  </span>
+                </button>
+              );
+            })
+          )}
 
           {/* Connected cloud providers grouped */}
           {availableProviders.map((p) => (
@@ -90,7 +145,7 @@ function ModelSwitcher() {
                 (p.models || []).map((m) => (
                   <button
                     key={m}
-                    onClick={() => handleSelect(p.id, m)}
+                    onClick={() => handleCloudSelect(p.id, m)}
                     className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-muted transition-colors ${
                       active === p.id && selModels[p.id] === m ? "bg-primary/10 text-primary font-medium" : "text-foreground"
                     }`}
@@ -100,7 +155,7 @@ function ModelSwitcher() {
                 ))
               ) : (
                 <button
-                  onClick={() => handleSelect(p.id)}
+                  onClick={() => handleCloudSelect(p.id)}
                   className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-muted transition-colors ${
                     active === p.id ? "bg-primary/10 text-primary font-medium" : "text-foreground"
                   }`}
@@ -122,6 +177,11 @@ function ModelSwitcher() {
   );
 }
 
+function fmtK(n: number): string {
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  return String(n);
+}
+
 export function ChatAssistant({ compact = false, sessionId = "default" }: { compact?: boolean; sessionId?: string }) {
   const { addNote, setActiveView } = useStore();
 
@@ -134,9 +194,38 @@ export function ChatAssistant({ compact = false, sessionId = "default" }: { comp
   const [isTyping, setIsTyping] = useState(false);
   const [lfmActive, setLfmActive] = useState(isLfmConfigured);
   const [providerLabel, setProviderLabel] = useState(getActiveProviderLabel);
+  const [localModels, setLocalModels] = useState<ModelEntryDto[]>([]);
+  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const [activeLocalId, setActiveLocalId] = useState<string | null>(null);
+  const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const localSessionRef = useRef<string | null>(null);
+
+  const refreshSessionInfo = useCallback(async () => {
+    const sid = localSessionRef.current;
+    if (!sid) { setSessionInfo(null); return; }
+    try {
+      const info = await getSessionInfo(sid);
+      setSessionInfo(info);
+    } catch {
+      // non-fatal — chip just stays blank
+    }
+  }, []);
+
+  // Tear down the local llama session, if any.
+  const teardownLocalSession = useCallback(async () => {
+    const sid = localSessionRef.current;
+    if (!sid) return;
+    localSessionRef.current = null;
+    setSessionInfo(null);
+    try {
+      await endChatSession(sid);
+    } catch (e) {
+      console.warn("[ChatAssistant] endChatSession failed:", e);
+    }
+  }, []);
 
   useEffect(() => {
     if (!sessionMessages.has(sessionId)) {
@@ -149,20 +238,67 @@ export function ChatAssistant({ compact = false, sessionId = "default" }: { comp
       abortRef.current.abort();
       abortRef.current = null;
     }
-  }, [sessionId]);
+    void teardownLocalSession();
+  }, [sessionId, teardownLocalSession]);
+
+  // On unmount: abort + tear down local session.
+  useEffect(() => {
+    return () => {
+      if (abortRef.current) abortRef.current.abort();
+      void teardownLocalSession();
+    };
+  }, [teardownLocalSession]);
 
   useEffect(() => { sessionMessages.set(sessionId, messages); }, [messages, sessionId]);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, isTyping]);
+
+  // Refresh provider/model state every 2s. Picks up changes made in Settings
+  // (download finished, new model activated, etc.) without needing wiring.
   useEffect(() => {
+    let cancelled = false;
     const refresh = async () => {
       await loadCloudKeys().catch(() => undefined);
+      await refreshLocalReady();
+      if (cancelled) return;
+      try {
+        const [list, dl, active] = await Promise.all([
+          listModels(),
+          listDownloaded(),
+          getActiveModel(),
+        ]);
+        if (cancelled) return;
+        setLocalModels(list);
+        setDownloadedIds(new Set(dl));
+        // If the active model changed under us, drop the stale plugin session.
+        if (active !== activeLocalId) {
+          void teardownLocalSession();
+          setActiveLocalId(active);
+        }
+      } catch (e) {
+        console.error("[ChatAssistant] local model refresh failed:", e);
+      }
+      if (cancelled) return;
       setLfmActive(isLfmConfigured());
       setProviderLabel(getActiveProviderLabel());
     };
     void refresh();
     const iv = setInterval(() => { void refresh(); }, 2000);
-    return () => clearInterval(iv);
-  }, []);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [activeLocalId, teardownLocalSession]);
+
+  const handleLocalSelect = useCallback(async (id: string) => {
+    try {
+      await setActiveModel(id);
+      // Drop stale session — next send creates a fresh one bound to the new model.
+      await teardownLocalSession();
+      setActiveLocalId(id);
+      await refreshLocalReady();
+      setLfmActive(isLfmConfigured());
+      setProviderLabel(getActiveProviderLabel());
+    } catch (e) {
+      console.error("[ChatAssistant] setActiveModel failed:", e);
+    }
+  }, [teardownLocalSession]);
 
   const handleCommand = useCallback((text: string): ChatMessage | null => {
     const lower = text.toLowerCase().trim();
@@ -205,9 +341,10 @@ export function ChatAssistant({ compact = false, sessionId = "default" }: { comp
       ];
       const controller = new AbortController();
       abortRef.current = controller;
-      streamLfmChat({
+      void streamLfmChat({
         messages: lfmMessages,
         signal: controller.signal,
+        localSessionRef,
         onDelta: (chunk) => {
           assistantContent += chunk;
           setMessages((prev) => {
@@ -216,7 +353,7 @@ export function ChatAssistant({ compact = false, sessionId = "default" }: { comp
             return [...prev, { id: assistantId, role: "assistant", content: assistantContent }];
           });
         },
-        onDone: () => { setIsTyping(false); abortRef.current = null; },
+        onDone: () => { setIsTyping(false); abortRef.current = null; void refreshSessionInfo(); },
         onError: (err) => {
           setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: `⚠️ ${err}` }]);
           setIsTyping(false);
@@ -228,15 +365,17 @@ export function ChatAssistant({ compact = false, sessionId = "default" }: { comp
 
     setIsTyping(true);
     setTimeout(() => {
-      const responses = [
-        `Connect a local LFM server in **Settings → Plugins** for AI-powered replies!`,
-        `I'm in offline mode. Set up your LFM endpoint to unlock full AI chat.`,
-        `Want smarter replies? Add your local LFM server URL in **Settings**.`,
-      ];
-      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: responses[Math.floor(Math.random() * responses.length)] }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "No local model active. Open **Settings → Local Models** to download one, or connect a cloud provider.",
+        },
+      ]);
       setIsTyping(false);
-    }, 400);
-  }, [input, messages, handleCommand]);
+    }, 250);
+  }, [input, messages, handleCommand, refreshSessionInfo]);
 
   const quickActions = [
     { label: "New Note", icon: FileText, action: () => setInput("new note: ") },
@@ -250,11 +389,26 @@ export function ChatAssistant({ compact = false, sessionId = "default" }: { comp
           <div className="h-7 w-7 rounded-full bg-foreground/10 flex items-center justify-center">
             <Bot className="h-4 w-4 text-foreground" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-foreground">Assistant</div>
-            <div className="text-[10px] text-muted-foreground">Always ready to help</div>
+            {sessionInfo ? (
+              <div className="flex items-center gap-1 text-[9px] font-mono text-muted-foreground">
+                <span className="text-primary/80">{sessionInfo.modelAlias}</span>
+                <span className="text-muted-foreground/40">·</span>
+                <span>{fmtK(sessionInfo.usedTokens)}/{fmtK(sessionInfo.nCtx)} ctx</span>
+                <span className="text-muted-foreground/40">·</span>
+                <span>{sessionInfo.temperature.toFixed(1)}°</span>
+              </div>
+            ) : (
+              <div className="text-[10px] text-muted-foreground">Always ready to help</div>
+            )}
           </div>
-          <ModelSwitcher />
+          <ModelSwitcher
+            localModels={localModels}
+            downloadedIds={downloadedIds}
+            activeLocalId={activeLocalId}
+            onLocalSelect={handleLocalSelect}
+          />
         </div>
       )}
 
@@ -313,7 +467,16 @@ export function ChatAssistant({ compact = false, sessionId = "default" }: { comp
             {qa.label}
           </button>
         ))}
-        {compact && <div className="ml-auto"><ModelSwitcher /></div>}
+        {compact && (
+          <div className="ml-auto">
+            <ModelSwitcher
+              localModels={localModels}
+              downloadedIds={downloadedIds}
+              activeLocalId={activeLocalId}
+              onLocalSelect={handleLocalSelect}
+            />
+          </div>
+        )}
       </div>
 
       {/* Input */}

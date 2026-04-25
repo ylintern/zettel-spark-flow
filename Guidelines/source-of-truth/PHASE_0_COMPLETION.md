@@ -202,3 +202,104 @@ See [`PHASE_0_7_BACKLOG.md`](./PHASE_0_7_BACKLOG.md) for detailed backlog.
 2. Complete reset-UI cards (Reset Onboarding, Delete All Notes, Delete Vault)
 3. Migrate onboarding state to file (localStorage cleanup)
 4. Selective folder deletion with checkboxes
+
+---
+
+## 2026-04-24 Update — Stronghold Active, Leap-AI Integration, Round-3 Fixes
+
+### Stronghold is now ACTIVE (no longer dormant)
+
+- `encryption_enabled: true` in `config/features.rs`
+- Onboarding state migrated to `viboai/onboarding.json` (backend-owned, file-based)
+- `tauri_plugin_stronghold` wired with `derive_vault_key` in `lib.rs`
+- LockScreen renders on `configured && !unlocked`; wizard only on `!configured`
+- Change-password flow works (`verify_vault_passphrase` + `reset_passphrase`)
+
+### Reload-Lock Security (Builder::on_page_load)
+
+`lib.rs` registers a `Builder::on_page_load` hook: on every `PageLoadEvent::Started` (⌘R / WebView reload), the backend drops the Stronghold session so the app always boots into `configured + locked` → LockScreen. The Rust process survives reloads. First load fires too but `lock()` is a no-op when session is already `None`.
+
+### Round-3 Fixes (2026-04-24) — Fix A/B/C/D
+
+All four fixes target the "reload-while-unlocked → wizard instead of LockScreen" regression:
+
+- **Fix A (`security/mod.rs::lock`)**: best-effort `save()`. `session.take()` runs first (vault IS locked in-memory). If `save()` errors, log warn and return `Ok(())`. Prevents `lock_vault` from erroring out and skipping `emit_vault_status`, which was the proximate cause of the frontend falling back to onboarding.
+- **Fix B (`Index.tsx::syncPhase`)**: outer catch now `console.error`s before falling back to onboarding. Future silent failures surface in DevTools.
+- **Fix C (`security/mod.rs::setup`)**: after a successful `stronghold.save()`, sweep `snapshot_path.parent()` for `secure-vault.hold.*` orphans (Stronghold's `.PARTI` temp files from crashed saves) and delete them. Guard: `name != stem` so the main `.hold` is never deleted.
+- **Fix D (`commands/onboarding.rs::reset_onboarding`)**: atomic reset. Calls `state.security.reset_vault()` FIRST (nuke `secure-vault.hold`), then deletes `onboarding.json`, then emits `vault-status`. Prevents BadFileKey when re-onboarding with a new PIN against a stale vault snapshot. Requires `emit_vault_status` = `pub(crate)`.
+
+### Leap-AI Integration (Desktop) — Architecture Decision
+
+**Stack:** `tauri-plugin-leap-ai` 0.1.1 with `desktop-embedded-llama` (llama.cpp in-process). No sidecars.
+
+**Architecture: Option B — Single Rust Inference Service.** Chosen because inference has multi-trigger surface area (UI chat, cron jobs, event-driven agents, scheduled tasks). If cloud/local split lived in TS only, cron/event triggers would need to self-invoke via HTTP — unacceptable. Single service = one choke point for local LLM inference; cloud streaming stays in `providers::stream_cloud_message`.
+
+**Command prefix convention (100% native):** `viboinference_*` (registered). Planned: `viboagents_*`, `vibocommands_*`, `vibotools_*`.
+
+**Event translation:** plugin's raw `leap-ai://event` is translated Rust-side to typed `vibo://*` events (`vibo://model-download-progress`, `vibo://model-state`, `vibo://chat-delta`, `vibo://chat-done`). Frontend never sees plugin-native shapes.
+
+**Model catalog (Rust-owned, frontend never sees URLs):** `services/model_catalog.rs`.
+
+**Phase 0.7-A (active, 2026-04-25)** — 2 GGUF models with role-aliases:
+- `lfm2.5-350m` · alias `junior` (Q4_K_M, ~219MB) — fast generalist
+- `lfm2.5-1.2b-instruct` · alias `specialist` (Q4_K_M, ~697MB, recommended) — balanced reasoning
+
+The agent layer addresses models by alias rather than raw id, so prompts like "ask the specialist" resolve via `model_catalog::get_by_alias()`. Each shipped agent gets a `<alias>.md` pre-setup file (planned, not yet scaffolded — kept simple).
+
+**Phase 0.7-B (planned)** — `lfm2.5-vl-450m` · alias `inspector` (Q4_0). Vision needs an `mmproj-*.gguf` companion shard; `tauri-plugin-leap-ai` 0.1.1's `download_model` only handles a single URL. Either (a) call `download_model` twice and load with `source_path` set, or (b) wait on plugin multi-shard support. Audio (VL-Audio) excluded for the same reason.
+
+**Phase 0.7-C (planned)** — `modernbert-base` · alias `emb` (ONNX-ORT). Embeddings model, NOT GGUF — runs on `ort` (ONNX Runtime), not llama.cpp. Will live in a separate `EmbeddingService` with its own `viboinference_emb_*` command prefix and its own download path (raw HF fetch, not via leap-ai plugin). Adds the `ort` crate (~30MB native lib) — kept out of 0.7-A to keep the build lean.
+
+**Removed from earlier draft (2026-04-24):** `lfm2.5-1.2b-thinking`, `lfm2.5-1.2b-jp`. Not in 0.7 roadmap — out of scope.
+
+### Plugin storage (verified)
+
+`tauri-plugin-leap-ai` 0.1.1 stores cached models at:
+
+```
+<app_data_dir>/leap-ai/
+├── downloaded-models.json    # plugin's index of cached entries
+└── <model files>             # GGUF blobs, plugin-managed names
+```
+
+For Vibo dev: `~/Library/Application Support/com.viboai.app.dev/leap-ai/`.
+For Vibo prod: `~/Library/Application Support/com.viboai.app/leap-ai/`.
+
+Source: `tauri-plugin-leap-ai-0.1.1/src/desktop.rs::storage_root_for_app` (`app.path().app_data_dir() + "leap-ai"`).
+
+**Cross-install discovery scope (corrected):** the plugin's storage is bundle-id-scoped, so two distinct LEAP-based apps will NOT share caches. Vibo dev and Vibo prod also do NOT share (different bundle ids). What `list_downloaded()` actually gives us is **persistence across Vibo launches** at the same bundle id — not cross-app reuse. Plan accordingly: a clean install always re-downloads.
+
+**Mobile deferred to task M.** Desktop-first ship. Mobile will use LEAP SDK path with device-recognition-on-first-launch. Cargo.toml mobile target commented out.
+
+**Registered commands (10):** `viboinference_list_models`, `_list_downloaded`, `_download_model`, `_delete_model`, `_get_active_model`, `_set_active_model`, `_start_chat_session`, `_stream_chat`, `_stop_generation`, `_end_chat_session`.
+
+### UX Simplification: Single-Model Pick on Onboarding
+
+**User decision:** no more "model packs". Onboarding picks ONE model (default `lfm2.5-1.2b-instruct`). Users download more / switch / delete in Settings. Removes `MODEL_PACKAGES`, `getPreInstalledFromPackage`, `ensurePreInstalled`.
+
+### Disk Layout Reference (dev bundle: `com.viboai.app.dev`)
+
+```
+~/Library/Application Support/com.viboai.app.dev/viboai/
+├── onboarding.json              # backend-owned prefs (userName, authMethod, model id)
+├── database/
+│   ├── secure-vault.hold        # Stronghold snapshot (the ONLY vault file after Fix C)
+│   ├── secure-vault.hold.HASH   # orphans — should be ZERO after any successful setup()
+│   ├── vibo.db                  # SQL (notes metadata mirror)
+│   └── vibo.db-{shm,wal}        # SQLite WAL artifacts
+└── myspace/
+    ├── notes/                   # user .md files (authoritative truth)
+    ├── agents/ mcp/ plugin/ providers/ roles/ skills/ tasks/ tools/  # reserved folders
+    └── <user folders>/
+```
+
+**Reset_onboarding touches:** `onboarding.json`, `secure-vault.hold`. Leaves `vibo.db`, `myspace/*`, and (until next `setup()`) `.hold.HASH` orphans.
+
+**factory_reset touches:** everything under `viboai/`.
+
+### Pending (T8–T11)
+
+- **T8** OnboardingWizard ModelStep: real `downloadModel` + `onModelDownloadProgress` + `setActiveModel`
+- **T9** LocalModelsSection: replace fake `setInterval` with real inference client calls
+- **T10** `src/lib/lfm.ts` in-place rewrite: keep public API (`streamLfmChat`, `isLfmConfigured`, `getActiveProviderLabel`); local path routes through inference.ts sessions; cloud path unchanged
+- **T11** Cleanup: delete `src-tauri/src/models/{manager,manifest,mod}.rs` if unused; remove pack logic from TS

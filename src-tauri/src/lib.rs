@@ -11,10 +11,11 @@ mod vault;
 
 use std::fs;
 
-use tauri::Manager;
+use tauri::{Manager, webview::PageLoadEvent};
 
 use crate::{
     security::{biometric::BiometricState, derive_vault_key, SecurityState},
+    services::inference::InferenceService,
     state::AppState,
 };
 
@@ -31,7 +32,10 @@ pub fn run() {
             .plugin(tauri_plugin_autostart::init(
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                 Some(vec![]),
-            ));
+            ))
+            // Leap AI (llama.cpp in-process, desktop-embedded-llama feature).
+            // Mobile registration deferred to task M (see Cargo.toml note).
+            .plugin(tauri_plugin_leap_ai::init());
     }
 
     // 3. Plugins exclusivos de Telemóvel (iOS/Android)
@@ -42,6 +46,24 @@ pub fn run() {
 
     // 4. Plugins Universais e arranque da App
     builder
+        .on_page_load(|webview, payload| {
+            // Reload-lock: on every WebView navigation/reload (⌘R), drop the
+            // Stronghold session so the app boots into "configured + locked" →
+            // LockScreen. The Rust process survives reloads. First load fires
+            // too but lock() is a no-op when the session is already None.
+            if matches!(payload.event(), PageLoadEvent::Started) {
+                let handle = webview.app_handle().clone();
+                let state = handle.state::<AppState>();
+                if let Err(e) = state.security.lock() {
+                    log::warn!("on_page_load: lock failed (non-fatal): {}", e);
+                }
+                let _ = security::emit_vault_status(
+                    &handle,
+                    &state.security,
+                    "page-load-reload",
+                );
+            }
+        })
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_dialog::init())
@@ -100,6 +122,15 @@ pub fn run() {
                 BiometricState::new(),
             ));
 
+            // InferenceService: attaches the leap-ai event listener and
+            // loads persisted active model preference. Managed as its own
+            // state rather than inside AppState so commands can take
+            // State<'_, InferenceService> directly.
+            app.manage(
+                InferenceService::init(app.handle())
+                    .expect("InferenceService init must succeed (LlamaBackend)"),
+            );
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -107,6 +138,7 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
             // A nossa lógica futura vai arrancar aqui!
             Ok(())
         })
@@ -144,6 +176,17 @@ pub fn run() {
             security::biometric::fallback_passphrase_unlock,
             config::features::get_feature_flags,
             providers::stream_cloud_message,
+            commands::inference::viboinference_list_models,
+            commands::inference::viboinference_list_downloaded,
+            commands::inference::viboinference_download_model,
+            commands::inference::viboinference_delete_model,
+            commands::inference::viboinference_get_active_model,
+            commands::inference::viboinference_set_active_model,
+            commands::inference::viboinference_start_chat_session,
+            commands::inference::viboinference_stream_chat,
+            commands::inference::viboinference_stop_generation,
+            commands::inference::viboinference_end_chat_session,
+            commands::inference::viboinference_session_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
