@@ -1,7 +1,11 @@
+> **STATUS (2026-04-26 review):** ✅ All Part A + B + C + D + E steps shipped 2026-04-24. See `Guidelines/source-of-truth/PHASE_0_COMPLETION.md` "2026-04-24 Update". This file is historical — kept for traceability. Marked for archive.
+
+**Outcome:** Encryption activated 2026-04-24 with Fix A/B/C/D + reload-lock via `Builder::on_page_load`. Onboarding state migrated to `viboai/onboarding.json`. Part G (Secrets UI) and Part H (Biometric) remain explicitly deferred.
+
 # Phase 1: Encryption Activation Checklist
 
-**Timeline:** Post-Phase 0.6 (when ready)  
-**Objective:** Flip encryption flag, activate vault lifecycle, enable user secrets  
+**Timeline:** Post-Phase 0.6 (when ready)
+**Objective:** Flip encryption flag, activate vault lifecycle, enable user secrets
 **Effort:** ~1 day (flag + testing) + 3 days (encryption UX hardening)
 
 ---
@@ -332,15 +336,15 @@
 
 | Milestone | Owner | Status | Date | Notes |
 |-----------|-------|--------|------|-------|
-| A. Flag flip | Dev | ⬜ | — | |
-| B. E2E testing | QA | ⬜ | — | |
-| C. Database checks | Dev | ⬜ | — | |
-| D. Event wiring | Dev | ⬜ | — | |
-| E. UI polish | Design/Dev | ⬜ | — | |
-| F. Docs updated | Tech Writer | ⬜ | — | |
-| G. Secrets (optional) | Dev | ⬜ | — | Phase 1.5 |
-| H. Biometric (Phase 2) | Dev | ⬜ | — | Deferred |
-| Phase 1 Complete | Product | ⬜ | — | Ready for release |
+| A. Flag flip | Dev | ✅ | 2026-04-24 | `encryption_enabled: true` |
+| B. E2E testing | QA | ✅ | 2026-04-24 | All B1–B7 passing |
+| C. Database checks | Dev | ✅ | 2026-04-24 | is_encrypted column live |
+| D. Event wiring | Dev | ✅ | 2026-04-24 | + reload-lock via `Builder::on_page_load` |
+| E. UI polish | Design/Dev | ✅ | 2026-04-24 | LockScreen + Settings card live |
+| F. Docs updated | Tech Writer | 🟡 | 2026-04-26 | Source-of-truth updated; user-facing guide pending |
+| G. Secrets (optional) | Dev | ⬜ | — | Phase 1.5 — still deferred |
+| H. Biometric (Phase 2) | Dev | ⬜ | — | Deferred — awaits hardware plugin |
+| Phase 1 Complete | Product | ✅ | 2026-04-24 | Released as part of Phase 0.7-A activation batch |
 
 ---
 

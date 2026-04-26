@@ -1,17 +1,17 @@
 # TO_DO: Phase 0 → Phase 0.7 → Phase 1 Checklist
 
-**Last Updated:** 2026-04-19  
-**Status:** Phase 0 feature-complete; Phase 0.7 backlog prioritized; Phase 1 deferred.
+**Last Updated:** 2026-04-26 (consolidation pass)
+**Status:** Phase 0 + 0.7-A feature-complete (Stronghold active, LFM inference shipped); residual = T8 verify, T11 cleanup, Reset-UI Steps 2–6, agent skills/roles scaffold.
 
 ---
 
 ## Quick Checklist (Phase 0.7 High Priority)
 
 ### Stronghold Lock/Unlock Activation
-- [ ] Flip `encryption_enabled: true` in `src-tauri/src/config/features.rs:51`
-- [ ] Add Lock Vault button to `src/components/SettingsView.tsx` (~5 LoC)
-- [ ] Test E2E: Onboarding → PIN → Settings → Lock → LockScreen → Unlock
-- [ ] Verify: Wrong PIN fails; correct PIN unlocks
+- [x] Flip `encryption_enabled: true` in `src-tauri/src/config/features.rs:51` — done 2026-04-24 per PHASE_0_COMPLETION.md
+- [x] Add Lock Vault button to `src/components/SettingsView.tsx` (~5 LoC) — done 2026-04-24
+- [x] Test E2E: Onboarding → PIN → Settings → Lock → LockScreen → Unlock — done 2026-04-24
+- [x] Verify: Wrong PIN fails; correct PIN unlocks — done 2026-04-24
 
 ### Reset Operations UI Cards (Steps 2–6)
 - [ ] Step 2: Reset Onboarding card (`ResetOnboardingSection.tsx` + `reset_onboarding()` command)
@@ -21,9 +21,9 @@
 - [ ] Step 6: Placeholder card (Delete Specific Folders — disabled, Phase 0.8 label)
 
 ### Onboarding State Migration (localStorage → File)
-- [ ] Create `src-tauri/src/commands/onboarding.rs` with `read_onboarding()`, `write_onboarding()`, `reset_onboarding()`
-- [ ] Refactor `src/components/OnboardingWizard.tsx` to use async Tauri calls
-- [ ] Test: Fresh install → onboarding file created; reset → file deleted; restart → wizard re-appears
+- [x] Create `src-tauri/src/commands/onboarding.rs` with `read_onboarding()`, `write_onboarding()`, `reset_onboarding()` — done 2026-04-24
+- [x] Refactor `src/components/OnboardingWizard.tsx` to use async Tauri calls — done 2026-04-24
+- [x] Test: Fresh install → onboarding file created; reset → file deleted; restart → wizard re-appears — done 2026-04-24 (Fix D atomic reset)
 
 ### Testing & Verification
 - [ ] All E2E smoke tests pass (onboarding PIN, onboarding Passphrase, lock/unlock, reset PIN, kanban DnD)
@@ -43,13 +43,13 @@
 
 | Task | Owner | Status | Est. Hours | Priority | Acceptance Criteria | Notes |
 |------|-------|--------|-----------|----------|---------------------|-------|
-| **Stronghold Activation** | — | Pending | 2 | HIGH | Lock button visible; lock→LockScreen; unlock works | Just 1-line flag flip + 5 LoC button; infrastructure ready |
+| **Stronghold Activation** | — | ✅ Done 2026-04-24 | 2 | HIGH | Lock button visible; lock→LockScreen; unlock works | Shipped with reload-lock via `Builder::on_page_load` + Fix A/B/C/D |
 | Step 2: Reset Onboarding | — | Pending | 3 | HIGH | Auth via old pass; snapshot deleted; wizard re-runs | Calls `reset_onboarding()` backend command |
 | Step 3: Delete All Notes | — | Pending | 2 | HIGH | Auth via pass; SQL cleared; myspace/ user folders wiped | Preserves reserved folders (Inbox, Archive) |
 | Step 4: Delete Vault + Checkbox | — | Pending | 3 | HIGH | Checkbox toggles behavior: wipe all vs. keep .md files | Refactor existing `SafeVaultResetSection` |
 | Step 5: Zone Layout | — | Pending | 1.5 | HIGH | Cards grouped into 2 sections; danger zone red accents | Pure UI refactoring in SettingsView |
 | Step 6: Placeholder Card | — | Pending | 0.5 | HIGH | Disabled, labeled "Phase 0.8"; styled consistently | Stub component; no backend work |
-| Onboarding State Migration | — | Pending | 4 | HIGH | File-based state; async Tauri calls; no localStorage for onboarding | Move `vibo-onboarding-done`, `vibo-ai-config` to file |
+| Onboarding State Migration | — | ✅ Done 2026-04-24 | 4 | HIGH | File-based state; async Tauri calls; no localStorage for onboarding | Lives at `viboai/onboarding.json` (backend-owned) |
 | E2E Testing | — | In Progress | 3 | HIGH | All smoke tests + matrix passing | Use native Tauri window; verify .md in Finder |
 | GitHub Commit & Push | — | Pending | 0.5 | HIGH | All changes on main; CI passes | Documentation + code |
 

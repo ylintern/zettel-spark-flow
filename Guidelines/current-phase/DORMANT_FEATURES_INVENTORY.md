@@ -1,7 +1,9 @@
+> **STATUS (2026-04-26 review):** ⚠️ Historical — superseded by `Guidelines/source-of-truth/PHASE_0_COMPLETION.md` (2026-04-24 Update section). Stronghold + encryption + lock/unlock are NO LONGER DORMANT (activated 2026-04-24). Marked for archive after Phase 1 review.
+
 # Dormant Features & Phase Roadmap Inventory
 
-**Last Updated:** 2026-04-19  
-**Status:** Comprehensive audit of compiled-but-inactive code  
+**Last Updated:** 2026-04-19 (status table fixed-up 2026-04-26)
+**Status:** Comprehensive audit of compiled-but-inactive code
 **Goal:** Visibility into what's built and waiting for activation
 
 ---
@@ -10,14 +12,15 @@
 
 | Phase | Feature | Frontend | Backend | Status | Activation Cost |
 |-------|---------|----------|---------|--------|-----------------|
-| **1** | **Encryption (vault + AES-256)** | ✅ 100% | ✅ 100% | Dormant (flag) | 0.5 hrs (flag flip) |
-| **1** | **Vault lifecycle (setup/unlock/lock)** | ✅ 100% | ✅ 100% | Dormant (flag) | 0.5 hrs |
-| **1** | **Passphrase mgmt (reset, change)** | ✅ 100% | ✅ 100% | Dormant (flag) | 0.5 hrs |
-| **1** | **Secret storage (API keys, tokens)** | ⚠️ Stub | ✅ 100% | Dormant (UI) | 4 hrs (UI) |
+| **1** | **Encryption (vault + AES-256)** | ✅ 100% | ✅ 100% | ✅ ACTIVE 2026-04-24 | — (shipped) |
+| **1** | **Vault lifecycle (setup/unlock/lock)** | ✅ 100% | ✅ 100% | ✅ ACTIVE 2026-04-24 | — (shipped + reload-lock) |
+| **1** | **Passphrase mgmt (reset, change)** | ✅ 100% | ✅ 100% | ✅ ACTIVE 2026-04-24 | — (shipped) |
+| **1.5** | **Secret storage (API keys, tokens)** | ⚠️ Stub | ✅ 100% | Dormant (UI) | 4 hrs (UI) |
+| **0.7-A** | **Local LFM inference (llama-cpp-2)** | ✅ 100% | ✅ 100% | ✅ ACTIVE 2026-04-25 | — (commit `61447f3`, T10/T12) |
 | **2** | **Biometric unlock (iOS/Android)** | ✅ 100% | ⚠️ Stubbed | Dormant (plugin) | 16 hrs (OS integration) |
 | **2** | **Encryption key rotation** | ❌ None | ❌ None | Not designed | 8 hrs (design + impl) |
 | **3** | **Cross-device vault sync** | ❌ None | ❌ None | Not designed | 12 hrs (design + impl) |
-| **3** | **Semantic search (LEAP AI)** | ❌ Commented | ⚠️ Stub | Blocked on deps | 24 hrs (Tauri 2.10 upgrade) |
+| **0.7-C** | **Semantic search / embeddings (ModernBERT-ONNX)** | ❌ None | ❌ None | Planned — separate `EmbeddingService` | 30+ hrs |
 | **3** | **RAG & context retrieval** | ❌ Stub | ⚠️ Stub | Design-time only | 40 hrs (full design) |
 | **10** | **iOS native app** | ❌ None | ❌ None | Not started | 80+ hrs (platform) |
 | **10** | **iCloud Drive vault sync** | ❌ None | ❌ None | Not designed | 20 hrs (design + impl) |
@@ -329,18 +332,22 @@ pub const FLAGS: FeatureFlags = FeatureFlags {
 
 ## Plugins Status
 
-| Plugin | Cargo.toml Line | Version | Status | Used In |
+| Plugin | Cargo.toml | Version | Status | Used In |
 |--------|----------|---------|--------|---------|
-| `tauri-plugin-stronghold` | 43 | 2.0.0-rc | ✅ Active | Vault encryption |
-| `tauri-plugin-fs` | 41 | 2 | ✅ Active | File I/O (vault reads) |
-| `tauri-plugin-sql` | 52 | 2.0.0-rc | ✅ Active | SQLite metadata |
-| `tauri-plugin-dialog` | 47 | 2.0.0-rc | ✅ Active | Future passphrase UI |
-| `tauri-plugin-clipboard-manager` | 45 | 2.0.0-beta.0 | ✅ Active | Copy/paste (secret risk?) |
-| `tauri-plugin-os` | 46 | 2 | ✅ Active | Device capability checks |
-| `tauri-plugin-autostart` | 62 | 2 | ✅ Active | Desktop auto-launch |
-| `tauri-plugin-global-shortcut` | 63 | 2.0.0-rc | ✅ Active | Keyboard shortcuts (Phase 2+) |
+| `tauri-plugin-stronghold` | active | 2.0.0-rc | ✅ Active (USED 2026-04-24) | Vault encryption + secret storage |
+| `tauri-plugin-fs` | active | 2 | ✅ Active | File I/O (vault reads) |
+| `tauri-plugin-sql` | active | 2.0.0-rc | ✅ Active | SQLite metadata |
+| `tauri-plugin-dialog` | active | 2.0.0-rc | ✅ Active | Passphrase / file UI |
+| `tauri-plugin-clipboard-manager` | active | 2.0.0-beta.0 | ✅ Active | Copy/paste |
+| `tauri-plugin-os` | active | 2 | ✅ Active | Device capability checks |
+| `tauri-plugin-log` | active | 2.0.0-rc | ✅ Active | Logging |
+| `tauri-plugin-autostart` | desktop-only | 2 | ✅ Active | Desktop auto-launch |
+| `tauri-plugin-global-shortcut` | desktop-only | 2.0.0-rc | ✅ Active | Keyboard shortcuts |
+| `tauri-plugin-leap-ai` | desktop-only | 0.1.1 + `desktop-embedded-llama` | ✅ ACTIVE 2026-04-24 | Local LFM inference (10 `viboinference_*` cmds) |
+| `llama-cpp-2` (rust-crate) | desktop-only | 0.1 | ✅ Active 2026-04-25 | In-process GGUF inference (commit `61447f3`) |
+| `tauri-plugin-haptics` | mobile-only | 2.0.0-rc | ✅ Active | iOS/Android haptics |
 | `tauri-plugin-biometric` | — | — | ❌ Not integrated | Biometric unlock (Phase 2) |
-| `tauri-plugin-leap-ai` | 64 | 0.1.1 (commented) | ❌ Blocked | Inference (Phase 3+, Tauri 2.10) |
+| `tauri-plugin-velesdb` | commented | — | Planned | Vector DB (Phase 0.7-C / Phase 3 RAG) |
 
 ---
 

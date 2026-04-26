@@ -1,71 +1,31 @@
 # Planned Plugins
 
-Plugins that are not yet integrated but are planned for future versions.
+Plugins not yet linked, with a clear roadmap slot. **Last reviewed 2026-04-26.**
 
-## Research Phase
+> `tauri-plugin-leap-ai` was previously listed here. It is now ACTIVE (since 2026-04-24) — see [`active/leap-ai.md`](active/leap-ai.md).
 
-| # | Plugin | Version | Purpose | Status |
-|---|--------|--------|---------|--------|
-| 1 | tauri-plugin-leap-ai | 0.1.1 | AI inference with local models | RESEARCH |
-| 2 | tauri-plugin-velesdb | 1.12.0 | Vector database for RAG | PENDING |
+## Currently planned
 
-## Not Planned (Using Custom Implementation)
+| Plugin / crate | Version | Purpose | Phase | Status |
+|---|---|---|---|---|
+| `tauri-plugin-velesdb` | 1.12.0 | Vector database for semantic search / RAG | 0.7-C → 3 | Commented in Cargo.toml |
+| `swiftide` | 0.32.1 | RAG framework (indexing + retrieval) | 3 | Commented in Cargo.toml |
+| `swiftide-agents` | 0.32.1 | Agent layer over Swiftide | 3 | Commented in Cargo.toml |
 
-| Plugin | Purpose | Notes |
-|--------|---------|-------|
-| tauri-plugin-biometric | Biometric authentication | Custom implementation in `security/biometric.rs` |
+See [`planned/velesdb.md`](planned/velesdb.md) for vector-DB notes.
 
-## Details
+## Out-of-scope (intentionally not planned)
 
-### tauri-plugin-leap-ai (0.1.1)
+| Plugin | Reason |
+|---|---|
+| `tauri-plugin-biometric` | Custom implementation lives in `src-tauri/src/security/biometric.rs`; OS-specific hardware unlock deferred to Phase 2 (16+ hrs OS integration work). No official Tauri plugin currently meets the iOS Secure Enclave / Android BiometricPrompt bar. |
+| `tauri-plugin-http` | The agent's web-search path is intentionally deferred. When implemented (post agent skeleton), preferred route is DDG / Tor / Firecrawl — free, Rust-friendly. Adding `tauri-plugin-http` would only be needed if we go the API-key path. |
 
-**Status:** RESEARCH
+## Pre-requisites for the next planned plugin (velesdb)
 
-**Purpose:** Local AI inference using embedded LLMs (Llama.cpp)
-
-**Requirements:**
-- Review compatibility with Tauri 2.0.0-rc.17
-- Target-specific features needed:
-  - Desktop: `desktop-embedded-llama` feature
-  - Mobile: Default LEAP SDK backend
-
-**Notes from Cargo.toml:**
-```
-# Research note (2026-04-11): tauri-plugin-leap-ai@0.1.1 documents
-# target-specific setup for cross-device builds. Keep it target-gated:
-# - Mobile (iOS/Android): default LEAP SDK backend
-# - Desktop (macOS/Windows/Linux): enable `desktop-embedded-llama`
-#
-# IMPORTANT REVIEW FLAG:
-# This workspace is still on Tauri 2.0.0-rc.* while leap-ai@0.1.1
-# documentation references Tauri 2.10.x. Validate dependency compatibility
-# in a dedicated upgrade branch before enabling leap-ai in production.
-```
-
-### tauri-plugin-velesdb (1.12.0)
-
-**Status:** PENDING
-
-**Purpose:** Vector database for semantic search and RAG (Retrieval-Augmented Generation)
-
-**Requirements:**
-- Swiftide integration for semantic search
-- Depends on tauri-plugin-leap-ai being enabled
-
-**Notes:**
-```
-# tauri-plugin-velesdb = "1.12.0"
-# swiftide = "0.32.1"
-# swiftide-agents = "0.32.1"
-```
-
-### tauri-plugin-biometric
-
-**Status:** NOT NEEDED
-
-**Purpose:** Fingerprint/Face ID authentication
-
-**Notes:** Custom implementation exists in `src-tauri/src/security/biometric.rs` - no official Tauri plugin required.
+- Stable inference layer (✅ shipped 2026-04-25, commit `61447f3`)
+- Embeddings runtime decision: `ort` (ONNX Runtime) for `modernbert-base` is the current plan — Phase 0.7-C, separate `EmbeddingService` (~30 MB native lib).
+- Vector store API contract (TBD when Phase 0.7-C kicks off).
 
 ---
-*See individual files in `planned/` subdirectory for detailed documentation.*
+*Last updated: 2026-04-26 (consolidation pass)*

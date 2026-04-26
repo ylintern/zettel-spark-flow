@@ -1,6 +1,19 @@
+---
+plugin: tauri-plugin-stronghold
+version: 2.0.0-rc
+scope: cross-platform
+status: active
+since: 2026-04-24
+phase: 0.7-A
+---
+
 # tauri-plugin-stronghold
 
 Secure secret storage plugin using IOTA Stronghold.
+
+> **Activation note (2026-04-24):** Plugin moved from compiled-but-dormant → ACTIVELY USED. `encryption_enabled: true` flipped in `src-tauri/src/config/features.rs`. LockScreen wired. Reload-lock via `Builder::on_page_load` (every WebView reload drops the session, forcing the user back to the lock screen). See `Guidelines/source-of-truth/PHASE_0_COMPLETION.md` "2026-04-24 Update".
+>
+> **Snapshot path:** `<app_data_dir>/viboai/database/secure-vault.hold`. Key derivation: SHA-256 → 32-byte vault key (`security::derive_vault_key`). Session lifecycle: `lock = drop session`, `unlock = load snapshot`, `reload = lock`. Fix C (2026-04-24) sweeps `secure-vault.hold.PARTI` orphans on every successful `setup()`.
 
 ## Plugin Details
 
@@ -8,7 +21,7 @@ Secure secret storage plugin using IOTA Stronghold.
 |-------|-------|
 | Name | tauri-plugin-stronghold |
 | Version | 2.0.0-rc |
-| Status | ACTIVE |
+| Status | ACTIVE (since 2026-04-24) |
 
 ## Purpose
 

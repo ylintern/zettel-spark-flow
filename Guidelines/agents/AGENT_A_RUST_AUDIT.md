@@ -1,3 +1,5 @@
+> **STATUS (2026-04-26):** Historical audit. Phase 0 + 0.7-A complete; current state lives in `Guidelines/source-of-truth/PHASE_0_COMPLETION.md`. Findings here informed the ship; left for traceability.
+
 # Agent A: Rust Architecture Audit
 
 ## Executive Summary

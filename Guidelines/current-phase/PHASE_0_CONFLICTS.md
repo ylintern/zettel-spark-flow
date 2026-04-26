@@ -1,5 +1,7 @@
+> **STATUS (2026-04-26 review):** ✅ All 7 conflicts RESOLVED in code per Phase 0 sign-off (2026-04-19) and 2026-04-24 batch. See `Guidelines/source-of-truth/PHASE_0_COMPLETION.md`. Resolutions summary: (1) FS-first via `vault/reconcile.rs`; (2) Encryption shipped 2026-04-24; (3) Kanban counts not auto-synced (display hint); (4) YAML schema = extended (id, kind, title, column, position, is_encrypted, folder, tags, updated); (5) iOS deferred to Phase 10; (6) tags/folders metadata-only in Phase 0; (7) tasks in `myspace/tasks/` (Model A). Marked for archive.
+
 # CRITICAL CONFLICTS: User Memories vs. Phase 0 Mandate
-**Status:** BLOCKING ISSUES IDENTIFIED  
+**Status:** ✅ RESOLVED 2026-04-24 — historical
 **Authority:** Product Coherence Review
 
 ---

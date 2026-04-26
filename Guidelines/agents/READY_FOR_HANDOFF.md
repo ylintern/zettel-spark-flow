@@ -1,3 +1,5 @@
+> **STATUS (2026-04-26):** Historical handoff note. Phase 0 + 0.7-A shipped 2026-04-19 → 2026-04-25. Current state lives in `Guidelines/source-of-truth/PHASE_0_COMPLETION.md`. Left for traceability.
+
 # Ready for Handoff — Phase 0.7 Implementation Guide
 
 **Audience:** Senior engineer / tech lead picking up Phase 0.7 work  

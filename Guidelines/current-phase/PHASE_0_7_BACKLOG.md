@@ -1,6 +1,7 @@
 # Phase 0.7 & Beyond — Backlog
 
-**Created:** 2026-04-19  
+**Created:** 2026-04-19
+**Last reviewed:** 2026-04-26 — Stronghold activation done; T9/T10/T12 done; T8/T11 + Reset-UI Steps 2–6 still pending.
 **Deferred from Phase 0:** Stronghold activation, advanced reset operations, selective deletion.
 
 ---
@@ -12,10 +13,12 @@
 **Status:** Infrastructure ready; needs UI + feature flag.
 
 **Tasks:**
-- [ ] Flip `encryption_enabled: true` in `src-tauri/src/config/features.rs:51`
-- [ ] Add "Lock Vault" button to `src/components/SettingsView.tsx` (call `lockVault()` from crypto.ts)
-- [ ] Test E2E: Onboarding → choose PIN/Passphrase → finish → unlock → settings → lock → LockScreen appears
-- [ ] Verify: wrong PIN → error; correct PIN → unlock → app
+- [x] Flip `encryption_enabled: true` in `src-tauri/src/config/features.rs:51` — done 2026-04-24
+- [x] Add "Lock Vault" button to `src/components/SettingsView.tsx` (call `lockVault()` from crypto.ts) — done 2026-04-24
+- [x] Test E2E: Onboarding → choose PIN/Passphrase → finish → unlock → settings → lock → LockScreen appears — done 2026-04-24
+- [x] Verify: wrong PIN → error; correct PIN → unlock → app — done 2026-04-24
+
+> ✅ **Section complete 2026-04-24.** See `Guidelines/source-of-truth/PHASE_0_COMPLETION.md` "2026-04-24 Update" — also includes Fix A/B/C/D and reload-lock via `Builder::on_page_load`.
 
 **Files to modify:**
 - `src-tauri/src/config/features.rs` (1-line change)
