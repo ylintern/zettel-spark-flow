@@ -1,6 +1,3 @@
-pub mod manifest;
-pub mod manager;
-
 use serde::{Deserialize, Serialize};
 
 /// Caller context for audit logging of mutations
