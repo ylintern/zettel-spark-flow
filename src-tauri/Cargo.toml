@@ -71,6 +71,13 @@ tauri-plugin-haptics = "2.0.0-rc"
 # Mobile: re-enable after task M (mobile research + SDK linking).
 # tauri-plugin-leap-ai = { version = "0.1.1" }
 
+# ── Dev-only deps (tests, benches) ──
+# tokio is needed by services/retrieval.rs tests (#[tokio::test] macro). The
+# runtime itself is already pulled in transitively by sqlx + tauri at runtime;
+# this entry exposes the proc-macros + a minimal runtime to the test harness.
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
+
 # ── Dev profile: optimize crypto crates so vault operations aren't painfully slow ──
 [profile.dev.package.iota_stronghold]
 opt-level = 2

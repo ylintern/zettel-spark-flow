@@ -111,8 +111,8 @@ mod tests {
             active_note_id: Some("note-1".to_string()),
             active_view: None,
             chat_session_id: None,
-            user_prompt: None,
-            selected_note_ids: None,
+            user_prompt: String::new(),
+            selected_note_ids: Vec::new(),
         };
 
         let context = provider.get_context(request).await;
