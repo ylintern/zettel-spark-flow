@@ -18,7 +18,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 export interface ModelEntryDto {
   id: string;
   name: string;
-  /** Short role-name used by the agent layer ("junior", "specialist"). */
+  /** Short role-name used by the agent layer ("junior", "specialist", "thinker", "inspector"). */
   alias: string;
   family: string;
   params: string;
@@ -26,6 +26,16 @@ export interface ModelEntryDto {
   modality: string[];
   description: string;
   recommended: boolean;
+  /**
+   * `false` for registered-but-not-yet-shippable rows (e.g. VL until the
+   * multimodal pipeline lands). UI pickers should hide these or grey them
+   * out with a "coming soon" affordance.
+   */
+  enabled: boolean;
+  /** Vision-language capability — needs an mmproj companion shard at load time. */
+  supportsVision: boolean;
+  /** Emits `<think>…</think>` blocks before the visible answer. FE stream parser routes those into a separate UI lane. */
+  supportsThinking: boolean;
   quantization: string;
 }
 

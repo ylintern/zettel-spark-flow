@@ -17,8 +17,11 @@ use frontmatter::NoteFrontmatter;
 /// Reserved folder names. Never allowed as user-created folders.
 /// - Type defaults: `notes`, `tasks`
 /// - Infrastructure (Phase 1+): `agents`, `skills`, `roles`, `providers`, `tools`, `mcp`, `plugin`
+/// - Per-model config (Phase 0.7-B / Q1=B): `models` — user-editable .md per
+///   shipped model (sampler, limits, modes). Bootstrap seeds from
+///   `src-tauri/src/templates/myspace/models/*.md`; user owns after.
 pub const RESERVED_FOLDER_NAMES: &[&str] = &[
-    "notes", "tasks", "agents", "skills", "roles", "providers", "tools", "mcp", "plugin",
+    "notes", "tasks", "agents", "skills", "roles", "providers", "tools", "mcp", "plugin", "models",
 ];
 
 pub fn is_reserved_folder(name: &str) -> bool {
