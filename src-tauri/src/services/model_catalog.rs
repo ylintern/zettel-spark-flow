@@ -18,8 +18,9 @@
 //!     is Phase 0.7-B Phase F1.
 //!   - `inspector`  → vision (LFM 2.5 VL 450M) — registered with
 //!     `enabled: false` until Phase 0.7-B Phase F2 lands the mmproj download
-//!     + multimodal inference path. See
-//!     `Guidelines/source-of-truth/VISION_RESEARCH_2026-04-28.md`.
+//!     + multimodal inference path. Crate-landscape research completed; see
+//!     `Guidelines/source-of-truth/VISION_RESEARCH_2026-04-30.md`
+//!     (recommendation: keep `llama-cpp-2 = 0.1.x`, wrap in `services/llama.rs`).
 //!
 //! Roadmap aliases (not yet shippable, listed for reference only):
 //!   - `emb` → embeddings (ModernBERT-base ONNX-ORT) — different runtime
@@ -233,9 +234,9 @@ pub const MODELS: &[ModelEntry] = &[
             default_n_ctx: 16_384,
             supports_vision: true,
             supports_thinking: false,
-            // mmproj_url stays None until vision research confirms the
-            // companion shard's exact URL + format. See
-            // Guidelines/source-of-truth/VISION_RESEARCH_2026-04-28.md.
+            // mmproj_url stays None until Phase F2 plan-approval picks up
+            // the multimodal pipeline. Crate-landscape research is complete:
+            // see Guidelines/source-of-truth/VISION_RESEARCH_2026-04-30.md.
             mmproj_url: None,
         },
     },

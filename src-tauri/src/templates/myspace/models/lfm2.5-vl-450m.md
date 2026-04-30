@@ -40,7 +40,7 @@ The model needs a paired **mmproj** (multimodal projector) shard alongside the m
 4. A `viboinference_attach_image(session_id, png_bytes)` Tauri command.
 5. UI affordance to upload an image into a chat turn.
 
-A research agent is currently producing `Guidelines/source-of-truth/VISION_RESEARCH_2026-04-28.md` to recommend the right Rust crate path consistent with our infra rules (in-process, no new plugin, llama-cpp-2 0.1.x line).
+Crate-landscape research has completed — see `Guidelines/source-of-truth/VISION_RESEARCH_2026-04-30.md`. Recommendation: keep `llama-cpp-2 = "0.1"` pinned, wrap mmproj inside `services/llama.rs`, no new plugin. Open question (flagged in §5 of the report): whether the 0.1.x line exposes the multimodal `mtmd_*` / `clip_*` C API at all, or whether a 0.2.x bump (with downstream cascade into `tauri-plugin-leap-ai`) is needed. Spike before Phase F2 plan-approval.
 
 ## What it would be for once enabled
 
@@ -61,4 +61,4 @@ A research agent is currently producing `Guidelines/source-of-truth/VISION_RESEA
 
 `https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF/resolve/main/LFM2.5-VL-450M-Q4_0.gguf`
 
-mmproj URL: TBD pending research (see `VISION_RESEARCH_2026-04-28.md`).
+mmproj URL: TBD pending Phase F2 spike (see `VISION_RESEARCH_2026-04-30.md` §5).

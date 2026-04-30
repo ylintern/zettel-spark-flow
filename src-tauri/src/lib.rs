@@ -94,6 +94,21 @@ pub fn run() {
                 eprintln!("[vibo] CRITICAL: myspace bootstrap failed: {}", e);
             }
 
+            // Phase 0.7-B/C: seed → mirror → index, in order.
+            // - Seeds (roles/skills/models): write-once, user owns after first write.
+            // - Plugin docs: mirror-overwrite from src-tauri/src/plugins/active/*.md.
+            // - Indexes: regenerated every launch by walking the live tree.
+            // All three are best-effort — failures are logged but don't block startup.
+            if let Err(e) = vault::seed_user_templates(&myspace_dir) {
+                eprintln!("[vibo] WARN: myspace seed failed (non-fatal): {}", e);
+            }
+            if let Err(e) = vault::mirror_plugin_docs(&myspace_dir) {
+                eprintln!("[vibo] WARN: plugin doc mirror failed (non-fatal): {}", e);
+            }
+            if let Err(e) = vault::regenerate_indexes(&myspace_dir) {
+                eprintln!("[vibo] WARN: index regeneration failed (non-fatal): {}", e);
+            }
+
             // One-time migration: move legacy DB files (bundle root) into database/.
             for name in ["vibo.db", "vibo.db-shm", "vibo.db-wal", "secure-vault.hold"] {
                 let legacy = app_data_dir.join(name);
